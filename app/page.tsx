@@ -9,9 +9,9 @@ import { Input } from "@heroui/input";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
 import { Edit2Icon, Eye, Trash2, Plus } from "lucide-react";
 
-import { type Cedear } from "../schema"; // Ajusta la ruta
-import { calculatePerformance } from "./utils/finance"; // Ajusta la ruta
-import { getCedearsData, addCedearData } from "./actions"; // Ajusta la ruta
+import { type Cedear } from "../schema"; 
+import { calculatePerformance } from "./utils/finance"; 
+import { getCedearsData, addCedearData, deleteCedearData, updateCedearData } from "./actions"; 
 
 export const columns = [
   { name: "TICKER", uid: "ticker" },
@@ -25,8 +25,27 @@ export default function CedearsTable() {
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
   const [data, setData] = useState<Cedear[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [editingItem, setEditingItem] = useState<Cedear | null>(null);
+  
 
-  // Cargar datos reales de Turso
+  // Estado controlado para los valores del formulario
+  const [formState, setFormState] = useState({
+    ticker: "",
+    pesosSpent: "",
+    cclPurchase: "",
+    pesosCurrent: "",
+    cclCurrent: "",
+    purchaseDate: "",
+  });
+
+  const { 
+    isOpen: isDeleteOpen, 
+    onOpen: onDeleteOpen, 
+    onClose: onDeleteClose 
+  } = useDisclosure();
+  const [itemToDelete, setItemToDelete] = useState<number | null>(null);
+
+  // Carga inicial de datos desde Turso
   const loadData = async () => {
     setIsLoading(true);
     const result = await getCedearsData();
@@ -38,23 +57,75 @@ export default function CedearsTable() {
     loadData();
   }, []);
 
-  // Manejar el envío del formulario
+  // Sincroniza el formulario cuando se abre el modal o cambia el ítem a editar
+  useEffect(() => {
+    if (editingItem && isOpen) {
+      setFormState({
+        ticker: editingItem.ticker,
+        pesosSpent: editingItem.pesosSpent.toString(),
+        cclPurchase: editingItem.cclPurchase.toString(),
+        pesosCurrent: editingItem.pesosCurrent.toString(),
+        cclCurrent: editingItem.cclCurrent.toString(),
+        purchaseDate: editingItem.purchaseDate,
+      });
+    } else if (!editingItem && isOpen) {
+      setFormState({
+        ticker: "",
+        pesosSpent: "",
+        cclPurchase: "",
+        pesosCurrent: "",
+        cclCurrent: "",
+        purchaseDate: "",
+      });
+    }
+  }, [editingItem, isOpen]);
+
+  const handleOpenAdd = () => {
+    setEditingItem(null);
+    onOpen();
+  };
+
+  const handleEdit = (item: Cedear) => {
+    setEditingItem(item);
+    onOpen();
+  };
+
+  // Esta función solo abre el modal y guarda el ID
+  const handleDeleteClick = (id: number) => {
+    setItemToDelete(id);
+    onDeleteOpen();
+  };
+
+  // Esta función se ejecuta cuando el usuario confirma en el modal
+  const confirmDelete = async () => {
+    if (itemToDelete !== null) {
+      await deleteCedearData(itemToDelete);
+      await loadData();
+      setItemToDelete(null);
+      onDeleteClose(); // Cierra el modal
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>, onClose: () => void) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
     
-    const newCedear = {
-      ticker: (formData.get("ticker") as string).toUpperCase(),
-      pesosSpent: Number(formData.get("pesosSpent")),
-      cclPurchase: Number(formData.get("cclPurchase")),
-      pesosCurrent: Number(formData.get("pesosCurrent")),
-      cclCurrent: Number(formData.get("cclCurrent")),
-      purchaseDate: formData.get("purchaseDate") as string,
+    const cedearData = {
+      ticker: formState.ticker.toUpperCase(),
+      pesosSpent: Number(formState.pesosSpent),
+      cclPurchase: Number(formState.cclPurchase),
+      pesosCurrent: Number(formState.pesosCurrent),
+      cclCurrent: Number(formState.cclCurrent),
+      purchaseDate: formState.purchaseDate,
     };
 
-    await addCedearData(newCedear);
-    await loadData(); // Refresca la tabla
-    onClose(); // Cierra el modal
+    if (editingItem) {
+      await updateCedearData(editingItem.id, cedearData);
+    } else {
+      await addCedearData(cedearData);
+    }
+
+    await loadData(); 
+    onClose(); 
   };
 
   const renderCell = React.useCallback((item: Cedear, columnKey: React.Key) => {
@@ -86,18 +157,19 @@ export default function CedearsTable() {
       case "actions":
         return (
           <div className="relative flex items-center gap-2">
-            <Tooltip content="Ver detalles">
-              <span className="text-lg text-default-400 cursor-pointer active:opacity-50">
-                <Eye size={18} />
-              </span>
-            </Tooltip>
             <Tooltip content="Editar inversión">
-              <span className="text-lg text-default-400 cursor-pointer active:opacity-50">
+              <span 
+                className="text-lg text-default-400 cursor-pointer active:opacity-50"
+                onClick={() => handleEdit(item)}
+              >
                 <Edit2Icon size={18} />
               </span>
             </Tooltip>
             <Tooltip color="danger" content="Eliminar registro">
-              <span className="text-lg text-danger cursor-pointer active:opacity-50">
+              <span 
+                className="text-lg text-danger cursor-pointer active:opacity-50"
+                onClick={() => handleDeleteClick(item.id)}
+              >
                 <Trash2 size={18} />
               </span>
             </Tooltip>
@@ -110,15 +182,13 @@ export default function CedearsTable() {
 
   return (
     <div className="flex flex-col gap-4 w-full max-w-5xl mx-auto p-4">
-      {/* Cabecera con el botón Agregar */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Mis Ganancias</h1>
-        <Button color="primary" onPress={onOpen} endContent={<Plus size={18} />}>
+        <Button color="primary" onPress={handleOpenAdd} endContent={<Plus size={18} />}>
           Agregar Inversión
         </Button>
       </div>
 
-      {/* Tabla */}
       <Table aria-label="Tabla de rendimientos de CEDEARs">
         <TableHeader columns={columns}>
           {(column) => (
@@ -136,33 +206,85 @@ export default function CedearsTable() {
         </TableBody>
       </Table>
 
-      {/* Modal Formulario */}
+      {/* Modal de Registro / Actualización */}
       <Modal isOpen={isOpen} onOpenChange={onOpenChange} placement="top-center">
         <ModalContent>
           {(onClose) => (
             <form onSubmit={(e) => handleSubmit(e, onClose)}>
-              <ModalHeader className="flex flex-col gap-1">Registrar nueva compra</ModalHeader>
+              <ModalHeader className="flex flex-col gap-1">
+                {editingItem ? "Editar inversión" : "Registrar nueva compra"}
+              </ModalHeader>
               <ModalBody>
-                <Input isRequired autoFocus name="ticker" label="Ticker" placeholder="Ej: AAPL" variant="bordered" />
+                <Input 
+                  isRequired autoFocus label="Ticker" placeholder="Ej: AAPL" variant="bordered"
+                  value={formState.ticker} 
+                  onValueChange={(val) => setFormState({ ...formState, ticker: val })}
+                />
                 <div className="flex gap-2">
-                  <Input isRequired type="number" step="0.01" name="pesosSpent" label="Pesos Gastados" placeholder="Ej: 150000" variant="bordered" />
-                  <Input isRequired type="number" step="0.01" name="cclPurchase" label="CCL al Comprar" placeholder="Ej: 1050.50" variant="bordered" />
+                  <Input 
+                    isRequired type="number" step="0.01" label="Pesos Gastados" placeholder="Ej: 150000" variant="bordered"
+                    value={formState.pesosSpent} 
+                    onValueChange={(val) => setFormState({ ...formState, pesosSpent: val })}
+                  />
+                  <Input 
+                    isRequired type="number" step="0.01" label="CCL al Comprar" placeholder="Ej: 1050.50" variant="bordered"
+                    value={formState.cclPurchase} 
+                    onValueChange={(val) => setFormState({ ...formState, cclPurchase: val })}
+                  />
                 </div>
                 <div className="flex gap-2">
-                  <Input isRequired type="number" step="0.01" name="pesosCurrent" label="Valor Actual (ARS)" placeholder="Ej: 210000" variant="bordered" />
-                  <Input isRequired type="number" step="0.01" name="cclCurrent" label="CCL Actual" placeholder="Ej: 1200" variant="bordered" />
+                  <Input 
+                    isRequired type="number" step="0.01" label="Valor Actual (ARS)" placeholder="Ej: 210000" variant="bordered"
+                    value={formState.pesosCurrent} 
+                    onValueChange={(val) => setFormState({ ...formState, pesosCurrent: val })}
+                  />
+                  <Input 
+                    isRequired type="number" step="0.01" label="CCL Actual" placeholder="Ej: 1200" variant="bordered"
+                    value={formState.cclCurrent} 
+                    onValueChange={(val) => setFormState({ ...formState, cclCurrent: val })}
+                  />
                 </div>
-                <Input isRequired type="date" name="purchaseDate" label="Fecha de Compra" variant="bordered" />
+                <Input 
+                  isRequired type="date" label="Fecha de Compra" variant="bordered"
+                  value={formState.purchaseDate} 
+                  onValueChange={(val) => setFormState({ ...formState, purchaseDate: val })}
+                />
               </ModalBody>
               <ModalFooter>
                 <Button color="danger" variant="flat" onPress={onClose}>
                   Cancelar
                 </Button>
                 <Button color="primary" type="submit">
-                  Guardar
+                  {editingItem ? "Actualizar" : "Guardar"}
                 </Button>
               </ModalFooter>
             </form>
+          )}
+        </ModalContent>
+      </Modal>
+
+      {/* Modal de Confirmación de Eliminación */}
+      <Modal isOpen={isDeleteOpen} onClose={onDeleteClose} placement="center" backdrop="blur">
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="flex flex-col gap-1 text-danger">
+                Confirmar Eliminación
+              </ModalHeader>
+              <ModalBody>
+                <p>
+                  ¿Estás seguro de que querés eliminar esta inversión? Esta acción no se puede deshacer y los datos se borrarán permanentemente.
+                </p>
+              </ModalBody>
+              <ModalFooter>
+                <Button variant="light" onPress={onClose}>
+                  Cancelar
+                </Button>
+                <Button color="danger" onPress={confirmDelete}>
+                  Sí, eliminar
+                </Button>
+              </ModalFooter>
+            </>
           )}
         </ModalContent>
       </Modal>
