@@ -5,17 +5,17 @@ import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@herou
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Autocomplete, AutocompleteItem } from "@heroui/autocomplete";
-import { mutate } from "swr"; // <-- Importamos mutate de swr
+import { mutate } from "swr";
 
-import { searchTickers, addTransaction } from "@/app/actions";
+import { searchTickers, addTransaction, updateTransactionData } from "@/app/actions";
 
 interface InvestmentModalProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
+  initialData?: any | null;
 }
 
-export function InvestmentModal({ isOpen, onOpenChange }: InvestmentModalProps) {
-  const [tickerSearch, setTickerSearch] = useState("");
+export function InvestmentModal({ isOpen, onOpenChange, initialData }: InvestmentModalProps) {
   const [tickerResults, setTickerResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   
@@ -35,6 +35,20 @@ export function InvestmentModal({ isOpen, onOpenChange }: InvestmentModalProps) 
     }
   }, [formState.price, formState.quantity]);
 
+  useEffect(() => {
+  if (initialData) {
+    setFormState({
+      ticker: initialData.ticker,
+      price: String(initialData.price),
+      quantity: String(initialData.quantity),
+      commission: String(initialData.commission),
+      date: initialData.date,
+    });
+  } else {
+    setFormState({ ticker: "", price: "", quantity: "", commission: "0", date: new Date().toISOString().split('T')[0] });
+  }
+}, [initialData]);
+
   const handleTickerSearch = async (value: string) => {
     if (!value || value.length < 2) {
       setTickerResults([]);
@@ -53,15 +67,21 @@ export function InvestmentModal({ isOpen, onOpenChange }: InvestmentModalProps) 
 
   const handleSubmit = async (e: React.FormEvent, onClose: () => void) => {
     e.preventDefault();
-    await addTransaction({
+
+    const transactionPayload = {
       ticker: formState.ticker,
       price: Number(formState.price),
       quantity: Number(formState.quantity),
       commission: Number(formState.commission),
       date: formState.date,
-    });
+    };
+
+    if (initialData?.id) {
+      await updateTransactionData(initialData.id, transactionPayload);
+    } else {
+      await addTransaction(transactionPayload);
+    }
     
-    // Le decimos a SWR que revalide las cachés en segundo plano
     mutate("portfolio");
     mutate("movements");
     
@@ -80,7 +100,7 @@ export function InvestmentModal({ isOpen, onOpenChange }: InvestmentModalProps) 
       <ModalContent>
         {(onClose) => (
           <form onSubmit={(e) => handleSubmit(e, onClose)}>
-            <ModalHeader>Registrar Nueva Compra</ModalHeader>
+            <ModalHeader>{initialData ? "Editar Movimiento" : "Registrar Nueva Compra"}</ModalHeader>
             <ModalBody>
               <Autocomplete
                 isRequired
@@ -89,7 +109,9 @@ export function InvestmentModal({ isOpen, onOpenChange }: InvestmentModalProps) 
                 isLoading={isSearching}
                 items={tickerResults}
                 allowsCustomValue
+                inputValue={formState.ticker}
                 onInputChange={(value) => {
+                  setFormState(prev => ({ ...prev, ticker: value }));  // 👈 sincroniza
                   if (value.length >= 2) handleTickerSearch(value);
                   else setTickerResults([]);
                 }}

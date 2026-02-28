@@ -1,3 +1,6 @@
+"use client";
+
+import React from "react";
 import {
   Navbar as HeroUINavbar,
   NavbarContent,
@@ -7,6 +10,7 @@ import {
   NavbarItem,
   NavbarMenuItem,
 } from "@heroui/navbar";
+import { usePathname } from "next/navigation";
 import { Link } from "@heroui/link";
 import { link as linkStyles } from "@heroui/theme";
 import NextLink from "next/link";
@@ -15,8 +19,11 @@ import clsx from "clsx";
 import { siteConfig } from "@/config/site";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { ChartNoAxesColumn } from "lucide-react";
+import { Divider } from "@heroui/divider";
 
 export const Navbar = () => {
+
+  const pathname = usePathname();
 
   return (
     <HeroUINavbar maxWidth="xl" position="sticky">
@@ -27,20 +34,31 @@ export const Navbar = () => {
           </NextLink>
         </NavbarBrand>
         <ul className="hidden lg:flex gap-4 justify-start ml-2">
-          {siteConfig.navItems.map((item) => (
-            <NavbarItem key={item.href}>
-              <NextLink
-                className={clsx(
-                  linkStyles({ color: "foreground" }),
-                  "data-[active=true]:text-primary data-[active=true]:font-medium",
+          {siteConfig.navItems.map((item, index, array) => {
+            const isActive = pathname === item.href;
+
+            return (
+              <React.Fragment key={item.href}>
+                <NavbarItem isActive={isActive}>
+                  <NextLink
+                    data-text={item.label}
+                    className={clsx(
+                      linkStyles({ color: "foreground" }), 
+                      isActive ? "!text-blue-500 font-bold" : "",
+                      "flex flex-col items-center after:content-[attr(data-text)] after:font-bold after:h-0 after:invisible after:overflow-hidden"
+                    )}
+                    href={item.href}
+                  >
+                    {item.label}
+                  </NextLink>
+                </NavbarItem>
+                
+                {index < array.length - 1 && (
+                  <Divider orientation="vertical" className="h-5 self-center opacity-50 mx-2" />
                 )}
-                color="foreground"
-                href={item.href}
-              >
-                {item.label}
-              </NextLink>
-            </NavbarItem>
-          ))}
+              </React.Fragment>
+            );
+          })}
         </ul>
       </NavbarContent>
 

@@ -90,7 +90,7 @@ export default function InvestmentsPage() {
   return (
     <div className="flex flex-col gap-8 w-full max-w-7xl mx-auto p-4">
       <section className="flex flex-col gap-4">
-        <h2 className="text-xl font-bold">Mi Portfolio</h2>
+        <h2 className="text-3xl font-bold">Portfolio</h2>
         <Table aria-label="Tabla de portfolio">
           <TableHeader columns={portfolioColumns}>
             {(col) => <TableColumn key={col.uid}>{col.name}</TableColumn>}
@@ -113,7 +113,7 @@ export default function InvestmentsPage() {
               <Card>
                 <CardBody className="flex flex-col items-center justify-center p-6 text-center">
                   <p className="text-sm text-default-500 uppercase font-bold tracking-wider">Total Inversión</p>
-                  <p className="text-2xl font-bold mt-2">
+                  <p className="text-xl font-bold mt-2">
                     $ {totalInversion.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </p>
                 </CardBody>
@@ -122,7 +122,7 @@ export default function InvestmentsPage() {
               <Card>
                 <CardBody className="flex flex-col items-center justify-center p-6 text-center">
                   <p className="text-sm text-default-500 uppercase font-bold tracking-wider">Total Actual</p>
-                  <p className="text-2xl font-bold mt-2">
+                  <p className="text-xl font-bold mt-2">
                     $ {totalActual.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </p>
                 </CardBody>
@@ -131,7 +131,7 @@ export default function InvestmentsPage() {
               <Card>
                 <CardBody className="flex flex-col items-center justify-center p-6 text-center">
                   <p className="text-sm text-default-500 uppercase font-bold tracking-wider">Resultado $</p>
-                  <p className={`text-2xl font-bold mt-2 ${isGlobalPositive ? "text-success" : "text-danger"}`}>
+                  <p className={`text-xl font-bold mt-2 ${isGlobalPositive ? "text-success" : "text-danger"}`}>
                     {isGlobalPositive ? "+" : ""}$ {resultadoCash.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </p>
                 </CardBody>
@@ -140,7 +140,7 @@ export default function InvestmentsPage() {
               <Card>
                 <CardBody className="flex flex-col items-center justify-center p-6 text-center">
                   <p className="text-sm text-default-500 uppercase font-bold tracking-wider">Resultado %</p>
-                  <p className={`text-2xl font-bold mt-2 ${isGlobalPositive ? "text-success" : "text-danger"}`}>
+                  <p className={`text-xl font-bold mt-2 ${isGlobalPositive ? "text-success" : "text-danger"}`}>
                     {isGlobalPositive ? "+" : ""}{resultadoPercent.toFixed(2)}%
                   </p>
                 </CardBody>
