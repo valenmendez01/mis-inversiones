@@ -2,13 +2,22 @@
 
 import React, { useMemo, useState } from "react";
 import { Table, TableHeader, TableBody, TableColumn, TableRow, TableCell } from "@heroui/table";
+import { Pagination } from "@heroui/pagination";
 import { Chip } from "@heroui/chip";
 import { Card, CardBody } from "@heroui/card";
+import { Select, SelectItem } from "@heroui/select";
 import useSWR from "swr";
-import { getPortfolioData } from "./actions";
+import { getPortfolioData, getEvolutionData } from "./actions";
 import PieChart from "@/components/charts/pie-chart";
 import PieSlice from "@/components/charts/pie-slice";
-import { Legend, LegendItem, LegendLabel, LegendMarker, LegendValue } from "@/components/legend";
+import { Legend, LegendItem, LegendLabel, LegendMarker, LegendValue } from "@/components/charts/legend";
+import AreaChart, { Area } from "@/components/charts/area-chart";
+import BarXAxis from "@/components/charts/bar-x-axis";
+import Grid from "@/components/charts/grid";
+import { ChartTooltip } from "@/components/charts/tooltip";
+import BarChart from "@/components/charts/bar-chart";
+import Bar from "@/components/charts/bar";
+import XAxis from "@/components/charts/x-axis";
 
 const portfolioColumns = [
   { name: "TICKER", uid: "ticker" },
@@ -25,24 +34,77 @@ const portfolioColumns = [
 export default function InvestmentsPage() {
   // SWR maneja la petición y el estado de carga automáticamente
   const { data: portfolio = [], isLoading } = useSWR("portfolio", getPortfolioData);
+  const { data: evolution = [] } = useSWR("evolution", getEvolutionData);
+
+  const processedEvolution = useMemo(() => {
+    return evolution.map((d: any) => ({
+      ...d,
+      // Convertimos el string ISO que viene del servidor a un objeto Date real
+      date: new Date(d.date)
+    })).filter(d => !isNaN(d.date.getTime())); // Filtramos posibles fechas rotas
+  }, [evolution]);
+
+  const [sortType, setSortType] = useState("significance");
+
+  const profitLossData = useMemo(() => {
+    const processed = portfolio.map((item: any) => ({
+      ticker: item.ticker,
+      diffCash: item.diffCash,
+      currentValue: item.currentValue,
+      Ganancia: item.diffCash >= 0 ? item.diffCash : undefined,
+      Pérdida: item.diffCash < 0 ? Math.abs(item.diffCash) : undefined,
+    }));
+
+    // Ordenamos según la selección del usuario
+    if (sortType === "significance") {
+      processed.sort((a, b) => Math.abs(b.diffCash) - Math.abs(a.diffCash));
+    } else {
+      processed.sort((a, b) => b.currentValue - a.currentValue);
+    }
+
+    return processed.slice(0, 6);
+  }, [portfolio, sortType]);
 
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-
   const chartColors = ["#0ea5e9", "#a855f7", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6"];
   
-  const pieChartData = portfolio.map((item: any, index: number) => ({
-    label: item.ticker,
-    value: item.currentValue,
-    color: chartColors[index % chartColors.length]
-  }));
+  const pieChartData = useMemo(() => {
+    if (portfolio.length === 0) return [];
 
-  const totalCartera = pieChartData.reduce((acc: number, item: any) => acc + item.value, 0);
+    // 1. Ordenar por valor actual descendente
+    const sortedPortfolio = [...portfolio].sort((a, b) => b.currentValue - a.currentValue);
 
-  const legendItems = pieChartData.map((d: any) => ({
+    // 2. Tomar los 5 primeros
+    const top5 = sortedPortfolio.slice(0, 5);
+    const remaining = sortedPortfolio.slice(5);
+
+    // 3. Formatear los top 5
+    const data = top5.map((item, index) => ({
+      label: item.ticker,
+      value: item.currentValue,
+      color: chartColors[index % chartColors.length]
+    }));
+
+    // 4. Agrupar el resto en "Otros" si existen
+    if (remaining.length > 0) {
+      const othersValue = remaining.reduce((acc, item) => acc + item.currentValue, 0);
+      
+      data.push({
+        label: "Otros",
+        value: othersValue,
+        color: "#94a3b8" // Gris neutro para la categoría Otros
+      });
+    }
+
+    return data;
+  }, [portfolio]);
+
+  // 5. Actualizar legendItems para que use la nueva data procesada
+  const legendItems = useMemo(() => pieChartData.map((d) => ({
     label: d.label,
-    value: d.value, // Pasamos el valor numérico normal
+    value: d.value,
     color: d.color,
-  }));
+  })), [pieChartData]);
 
   const totalInversion = useMemo(() => {
     return portfolio.reduce((acc: number, item: any) => acc + item.investment, 0);
@@ -55,6 +117,21 @@ export default function InvestmentsPage() {
   const resultadoCash = totalActual - totalInversion;
   const resultadoPercent = totalInversion > 0 ? (totalActual / totalInversion - 1) * 100 : 0;
   const isGlobalPositive = resultadoCash >= 0;
+
+  // PAGINACIÓN
+
+  const [page, setPage] = useState(1);
+  const rowsPerPage = 5; // Máximo de filas
+
+  // Calcular el total de páginas
+  const pages = Math.ceil(portfolio.length / rowsPerPage);
+
+  // Obtener solo los items de la página actual
+  const items = useMemo(() => {
+    const start = (page - 1) * rowsPerPage;
+    const end = start + rowsPerPage;
+    return portfolio.slice(start, end);
+  }, [page, portfolio]);
 
   const renderPortfolioCell = (item: any, columnKey: React.Key) => {
     const isPositive = item.diffCash >= 0;
@@ -91,11 +168,31 @@ export default function InvestmentsPage() {
     <div className="flex flex-col gap-8 w-full max-w-7xl mx-auto p-4">
       <section className="flex flex-col gap-4">
         <h2 className="text-3xl font-bold">Portfolio</h2>
-        <Table aria-label="Tabla de portfolio">
+        <Table 
+          aria-label="Tabla de portfolio"
+          classNames={{
+            wrapper: "min-h-[400px]", 
+          }}
+          bottomContent={
+            pages > 1 ? (
+              <div className="flex w-full justify-center">
+                <Pagination
+                  isCompact
+                  showControls
+                  showShadow
+                  color="primary"
+                  page={page}
+                  total={pages}
+                  onChange={(page) => setPage(page)}
+                />
+              </div>
+            ) : null
+          }
+        >
           <TableHeader columns={portfolioColumns}>
             {(col) => <TableColumn key={col.uid}>{col.name}</TableColumn>}
           </TableHeader>
-          <TableBody items={portfolio} emptyContent={isLoading ? "Cargando..." : "Sin datos en el portfolio"}>
+          <TableBody items={items} emptyContent={isLoading ? "Cargando..." : "Sin datos en el portfolio"}>
             {(item) => (
               <TableRow key={item.ticker}>
                 {(key) => <TableCell>{renderPortfolioCell(item, key)}</TableCell>}
@@ -110,7 +207,7 @@ export default function InvestmentsPage() {
             
             {/* LADO IZQUIERDO: 4 Cards (Grid 2x2) */}
             <div className="grid grid-cols-2 gap-4 w-full lg:w-1/2">
-              <Card>
+              <Card className="hover:scale-105 transition-transform duration-200 hover:shadow-lg">
                 <CardBody className="flex flex-col items-center justify-center p-6 text-center">
                   <p className="text-sm text-default-500 uppercase font-bold tracking-wider">Total Inversión</p>
                   <p className="text-xl font-bold mt-2">
@@ -119,7 +216,7 @@ export default function InvestmentsPage() {
                 </CardBody>
               </Card>
 
-              <Card>
+              <Card className="hover:scale-105 transition-transform duration-200 hover:shadow-lg">
                 <CardBody className="flex flex-col items-center justify-center p-6 text-center">
                   <p className="text-sm text-default-500 uppercase font-bold tracking-wider">Total Actual</p>
                   <p className="text-xl font-bold mt-2">
@@ -128,7 +225,7 @@ export default function InvestmentsPage() {
                 </CardBody>
               </Card>
 
-              <Card>
+              <Card className="hover:scale-105 transition-transform duration-200 hover:shadow-lg">
                 <CardBody className="flex flex-col items-center justify-center p-6 text-center">
                   <p className="text-sm text-default-500 uppercase font-bold tracking-wider">Resultado $</p>
                   <p className={`text-xl font-bold mt-2 ${isGlobalPositive ? "text-success" : "text-danger"}`}>
@@ -137,7 +234,7 @@ export default function InvestmentsPage() {
                 </CardBody>
               </Card>
 
-              <Card>
+              <Card className="hover:scale-105 transition-transform duration-200 hover:shadow-lg">
                 <CardBody className="flex flex-col items-center justify-center p-6 text-center">
                   <p className="text-sm text-default-500 uppercase font-bold tracking-wider">Resultado %</p>
                   <p className={`text-xl font-bold mt-2 ${isGlobalPositive ? "text-success" : "text-danger"}`}>
@@ -164,7 +261,7 @@ export default function InvestmentsPage() {
                 items={legendItems}
                 hoveredIndex={hoveredIndex}
                 onHoverChange={setHoveredIndex}
-                title="Porcentaje de cartera"
+                title="Distribución de Cartera"
               >
                 <LegendItem className="flex items-center gap-3">
                   <LegendMarker />
@@ -178,6 +275,94 @@ export default function InvestmentsPage() {
             
           </section>
         )}
+
+        {/* NUEVA SECCIÓN: Gráficos de Rendimiento */}
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8 mb-8">
+          
+          {/* AREA CHART: Evolución de Inversión vs Valor */}
+          <Card className="p-4">
+            <h3 className="text-xl font-bold p-4">Evolución de Patrimonio</h3>
+            <div className="h-[300px] w-full">
+              <AreaChart data={processedEvolution}>
+                <Grid horizontal />
+                <Area 
+                  dataKey="value"
+                  fill="var(--chart-line-primary)" 
+                  stroke="#0ea5e9"
+                />
+                <Area 
+                  dataKey="invested"  
+                  fill="var(--chart-line-secondary)" 
+                  stroke="#64748b"
+                />
+                <XAxis />
+                <ChartTooltip 
+                  showDots={true} // Asegura que los círculos en los puntos de datos estén activos
+                  rows={(point) => [
+                    { 
+                      // Color del dot para la primera serie (debe ser un color visible o variable CSS)
+                      color: "#0ea5e9", 
+                      label: "Valor Mercado", 
+                      value: `$ ${Number(point.value).toLocaleString()}` 
+                    },
+                    { 
+                      // Color del dot para la segunda serie
+                      color: "#64748b", 
+                      label: "Total Invertido", 
+                      value: `$ ${Number(point.invested).toLocaleString()}` 
+                    },
+                  ]}  
+                />
+              </AreaChart>
+            </div>
+          </Card>
+
+          {/* BAR CHART: Profit por Activo */}
+          <Card className="p-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-4">
+              <h3 className="text-xl font-bold">Rendimiento por Activo</h3>
+              <Select
+                aria-label="Seleccionar modo de visualización"
+                className="max-w-[200px]"
+                disallowEmptySelection
+                selectedKeys={[sortType]}
+                size="sm"
+                variant="bordered"
+                onSelectionChange={(keys) => setSortType(Array.from(keys)[0] as string)}
+              >
+                <SelectItem key="significance" textValue="Más Significativos">
+                  Más Significativos
+                </SelectItem>
+                <SelectItem key="portfolio" textValue="Mayor % Cartera">
+                  Mayor % Cartera
+                </SelectItem>
+              </Select>
+            </div>
+
+            <div className="h-[250px] w-full mt-4">
+              <BarChart data={profitLossData} xDataKey="ticker" stacked>
+                <Grid horizontal />
+                <Bar dataKey="Ganancia" fill="#10b981" lineCap="round" />
+                <Bar dataKey="Pérdida" fill="#ef4444" lineCap="round" />
+                <BarXAxis />
+                <ChartTooltip
+                  rows={(point) => [
+                    point.Ganancia !== undefined && {
+                      color: "#10b981",
+                      label: "Ganancia",
+                      value: `$ ${Number(point.Ganancia).toLocaleString()}`,
+                    },
+                    point.Pérdida !== undefined && {
+                      color: "#ef4444",
+                      label: "Pérdida",
+                      value: `$ ${Number(point.Pérdida).toLocaleString()}`,
+                    },
+                  ].filter(Boolean) as any}
+                />
+              </BarChart>
+            </div>
+          </Card>
+        </section>
       </section>
     </div>
   );

@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Table, TableHeader, TableBody, TableColumn, TableRow, TableCell } from "@heroui/table";
+import { Pagination } from "@heroui/pagination";
 import { Button } from "@heroui/button";
 import { Tooltip } from "@heroui/tooltip";
 import { useDisclosure } from "@heroui/modal";
@@ -33,6 +34,17 @@ export function MovementsTable() {
     mutate("movements");
     mutate("portfolio");
   };
+
+  const [page, setPage] = useState(1); // Estado para la página actual
+  const rowsPerPage = 10; // Máximo de filas solicitado
+
+  const pages = Math.ceil(movements.length / rowsPerPage);
+
+  const items = useMemo(() => {
+    const start = (page - 1) * rowsPerPage;
+    const end = start + rowsPerPage;
+    return movements.slice(start, end);
+  }, [page, movements]);
 
   const renderMovementCell = (item: any, columnKey: React.Key) => {
     switch (columnKey) {
@@ -70,11 +82,28 @@ export function MovementsTable() {
         </Button>
       </div>
       
-      <Table aria-label="Tabla de movimientos">
+      <Table 
+        aria-label="Tabla de movimientos"
+        bottomContent={
+          pages > 1 ? (
+            <div className="flex w-full justify-center">
+              <Pagination
+                isCompact
+                showControls
+                showShadow
+                color="primary"
+                page={page}
+                total={pages}
+                onChange={(page) => setPage(page)}
+              />
+            </div>
+          ) : null
+        }
+      >
         <TableHeader columns={movementColumns}>
           {(col) => <TableColumn key={col.uid}>{col.name}</TableColumn>}
         </TableHeader>
-        <TableBody items={movements} emptyContent={isLoading ? "Cargando..." : "Sin movimientos"}>
+        <TableBody items={items} emptyContent={isLoading ? "Cargando..." : "Sin movimientos"}>
           {(item) => (
             <TableRow key={item.id}>
               {(key) => <TableCell>{renderMovementCell(item, key)}</TableCell>}

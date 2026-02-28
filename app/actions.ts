@@ -45,21 +45,26 @@ export async function searchTickers(query: string) {
 
 export async function addTransaction(data: InsertTransaction) {
   try {
-    const existing = await db.select().from(assets).where(eq(assets.ticker, data.ticker)).get();
+    const cleanTicker = data.ticker.split(" - ")[0].trim().toUpperCase();
+
+    const existing = await db.select().from(assets).where(eq(assets.ticker, cleanTicker)).get();
     
     if (!existing) {
-      const meta = await yf.quoteSummary(data.ticker, { modules: ["assetProfile", "quoteType"] });
+      const meta = await yf.quoteSummary(cleanTicker, { modules: ["assetProfile", "quoteType"] });
 
       await db.insert(assets).values({
-        ticker: data.ticker,
-        name: meta.quoteType?.longName || data.ticker,
+        ticker: cleanTicker,
+        name: meta.quoteType?.longName || cleanTicker,
         sector: meta.assetProfile?.sector || "Otros",
         location: meta.assetProfile?.country || "N/A",
         updatedAt: new Date(),
       });
     }
 
-    await db.insert(transactions).values(data);
+    await db.insert(transactions).values({
+      ...data,
+      ticker: cleanTicker
+    });
     return { success: true };
   } catch (error) {
     console.error("Error en addTransaction:", error);
@@ -129,6 +134,79 @@ export async function deleteTransactionData(id: number) {
 
 // 4. Actualizar un movimiento (Opcional, si decides editar filas del historial)
 export async function updateTransactionData(id: number, data: Partial<typeof transactions.$inferInsert>) {
-  await db.update(transactions).set(data).where(eq(transactions.id, id));
-  return { success: true };
+  try {
+    const updateData = { ...data };
+
+    // Si el ticker viene en el objeto de actualización, lo limpiamos
+    if (updateData.ticker) {
+      updateData.ticker = updateData.ticker.split(" - ")[0].trim().toUpperCase();
+      
+      // Opcional: Verificar si el activo existe en la tabla 'assets'
+      const existing = await db.select().from(assets).where(eq(assets.ticker, updateData.ticker)).get();
+      
+      if (!existing) {
+        // Si el activo es nuevo debido al cambio de ticker, 
+        // podrías llamar a yf.quoteSummary aquí para crearlo en 'assets',
+        // de lo contrario la actualización fallará nuevamente.
+        const meta = await yf.quoteSummary(updateData.ticker, { modules: ["assetProfile", "quoteType"] });
+        
+        await db.insert(assets).values({
+          ticker: updateData.ticker,
+          name: meta.quoteType?.longName || updateData.ticker,
+          sector: meta.assetProfile?.sector || "Otros",
+          location: meta.assetProfile?.country || "N/A",
+          updatedAt: new Date(),
+        });
+      }
+    }
+
+    await db.update(transactions)
+      .set(updateData)
+      .where(eq(transactions.id, id));
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error en updateTransactionData:", error);
+    return { success: false };
+  }
+}
+
+export async function getEvolutionData() {
+  const allTx = await db.select().from(transactions).orderBy(transactions.date);
+  if (allTx.length === 0) return [];
+
+  const uniqueTickers = Array.from(new Set(allTx.map(t => t.ticker)));
+  const symbols = uniqueTickers.map(t => t.includes('.') ? t : `${t}.BA`);
+  
+  try {
+    const quotes = await yf.quote(symbols);
+    let cumulativeInvestment = 0;
+    const currentQuantities: Record<string, number> = {};
+
+    return allTx.map(tx => {
+      // 1. Acumular inversión (Costo + Comisión)
+      const cost = (tx.price * tx.quantity) + tx.commission;
+      cumulativeInvestment += cost;
+
+      // 2. Actualizar cantidades acumuladas por ticker
+      currentQuantities[tx.ticker] = (currentQuantities[tx.ticker] || 0) + tx.quantity;
+
+      // 3. Calcular el valor de mercado de la cartera en ese punto temporal 
+      // usando los precios actuales (proyección de crecimiento)
+      let currentMarketValue = 0;
+      for (const [ticker, qty] of Object.entries(currentQuantities)) {
+        const quote = quotes.find(q => q.symbol.startsWith(ticker));
+        currentMarketValue += qty * (quote?.regularMarketPrice || 0);
+      }
+
+      return {
+        date: new Date(tx.date + 'T00:00:00'),
+        invested: Number(cumulativeInvestment.toFixed(2)),
+        value: Number(currentMarketValue.toFixed(2)),
+      };
+    });
+  } catch (error) {
+    console.error("Error en getEvolutionData:", error);
+    return [];
+  }
 }
