@@ -1,9 +1,11 @@
-import { title } from "@/components/primitives";
+"use client";
 
-export default function DocPage() {
+import { MovementsTable } from "@/components/movements-table";
+
+export default function MovimientosPage() {
   return (
-    <div>
-      <h1 className={title()}>Doc</h1>
+    <div className="flex flex-col gap-4">
+      <MovementsTable />
     </div>
   );
 }
