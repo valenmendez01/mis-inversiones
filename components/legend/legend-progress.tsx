@@ -43,6 +43,7 @@ export function LegendProgress({
             trackClassName
           ),
           // Indicator es la barra de progreso en sí.
+          // Usamos una clase arbitraria para leer la variable CSS
           indicator: clsx(
             "bg-[var(--legend-item-color)] transition-all duration-500",
             indicatorClassName
