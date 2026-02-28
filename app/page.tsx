@@ -1,290 +1,256 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Table, TableHeader, TableBody, TableColumn, TableRow, TableCell } from "@heroui/table";
 import { Tooltip } from "@heroui/tooltip";
 import { Chip } from "@heroui/chip";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
+import { Autocomplete, AutocompleteItem } from "@heroui/autocomplete";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
-import { Edit2Icon, Eye, Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, Search } from "lucide-react";
 
-import { type Cedear } from "../schema"; 
-import { calculatePerformance } from "./utils/finance"; 
-import { getCedearsData, addCedearData, deleteCedearData, updateCedearData } from "./actions"; 
+import { searchTickers, addTransaction, getPortfolioData, getTransactionsData, deleteTransactionData } from "./actions";
 
-export const columns = [
+// Columnas para la tabla de Movimientos
+const movementColumns = [
   { name: "TICKER", uid: "ticker" },
-  { name: "INVERSIÓN (USD)", uid: "initialUsd" },
-  { name: "VALOR ACTUAL (USD)", uid: "currentUsd" },
-  { name: "RENDIMIENTO", uid: "profit" },
+  { name: "PRECIO", uid: "price" },
+  { name: "CANTIDAD", uid: "quantity" },
+  { name: "COMISIÓN", uid: "commission" },
+  { name: "FECHA", uid: "date" },
   { name: "ACCIONES", uid: "actions" },
 ];
 
-export default function CedearsTable() {
-  const { isOpen, onOpen, onOpenChange } = useDisclosure();
-  const [data, setData] = useState<Cedear[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [editingItem, setEditingItem] = useState<Cedear | null>(null);
-  
+// Columnas para la tabla de Portfolio
+const portfolioColumns = [
+  { name: "TICKER", uid: "ticker" },
+  { name: "NOMBRE", uid: "name" },
+  { name: "CANTIDAD", uid: "quantity" },
+  { name: "PPC", uid: "ppc" },
+  { name: "INVERSIÓN", uid: "investment" },
+  { name: "VALOR ACTUAL", uid: "currentValue" },
+  { name: "DIF $", uid: "diffCash" },
+  { name: "DIF %", uid: "diffPercent" },
+];
 
-  // Estado controlado para los valores del formulario
+export default function InvestmentsPage() {
+  const { isOpen, onOpen, onOpenChange } = useDisclosure();
+  const [movements, setMovements] = useState<any[]>([]);
+  const [portfolio, setPortfolio] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // Estados para el formulario y búsqueda
+  const [tickerSearch, setTickerSearch] = useState("");
+  const [tickerResults, setTickerResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [formState, setFormState] = useState({
     ticker: "",
-    pesosSpent: "",
-    cclPurchase: "",
-    pesosCurrent: "",
-    cclCurrent: "",
-    purchaseDate: "",
+    price: "",
+    quantity: "",
+    commission: "0",
+    date: new Date().toISOString().split('T')[0],
   });
 
-  const { 
-    isOpen: isDeleteOpen, 
-    onOpen: onDeleteOpen, 
-    onClose: onDeleteClose 
-  } = useDisclosure();
-  const [itemToDelete, setItemToDelete] = useState<number | null>(null);
-
-  // Carga inicial de datos desde Turso
-  const loadData = async () => {
+  // Cargar datos de ambas tablas
+  const loadAllData = async () => {
     setIsLoading(true);
-    const result = await getCedearsData();
-    setData(result);
+    const [mvs, pf] = await Promise.all([
+      getTransactionsData(), // Debes asegurar que esta función exista en actions.ts para traer el historial
+      getPortfolioData()
+    ]);
+    setMovements(mvs);
+    setPortfolio(pf);
     setIsLoading(false);
   };
 
   useEffect(() => {
-    loadData();
+    loadAllData();
   }, []);
 
-  // Sincroniza el formulario cuando se abre el modal o cambia el ítem a editar
+  // Cálculo automático de comisión (0.8%)
   useEffect(() => {
-    if (editingItem && isOpen) {
-      setFormState({
-        ticker: editingItem.ticker,
-        pesosSpent: editingItem.pesosSpent.toString(),
-        cclPurchase: editingItem.cclPurchase.toString(),
-        pesosCurrent: editingItem.pesosCurrent.toString(),
-        cclCurrent: editingItem.cclCurrent.toString(),
-        purchaseDate: editingItem.purchaseDate,
-      });
-    } else if (!editingItem && isOpen) {
-      setFormState({
-        ticker: "",
-        pesosSpent: "",
-        cclPurchase: "",
-        pesosCurrent: "",
-        cclCurrent: "",
-        purchaseDate: "",
-      });
+    const p = parseFloat(formState.price);
+    const q = parseFloat(formState.quantity);
+    if (p && q) {
+      setFormState(prev => ({ ...prev, commission: (p * q * 0.008).toFixed(2) }));
     }
-  }, [editingItem, isOpen]);
+  }, [formState.price, formState.quantity]);
 
-  const handleOpenAdd = () => {
-    setEditingItem(null);
-    onOpen();
-  };
+  // Manejo de búsqueda de tickers para el Autocomplete
+  const handleTickerSearch = async (value: string) => {
+    if (!value || value.length < 2) {
+      setTickerResults([]);
+      return;
+    }
 
-  const handleEdit = (item: Cedear) => {
-    setEditingItem(item);
-    onOpen();
-  };
-
-  // Esta función solo abre el modal y guarda el ID
-  const handleDeleteClick = (id: number) => {
-    setItemToDelete(id);
-    onDeleteOpen();
-  };
-
-  // Esta función se ejecuta cuando el usuario confirma en el modal
-  const confirmDelete = async () => {
-    if (itemToDelete !== null) {
-      await deleteCedearData(itemToDelete);
-      await loadData();
-      setItemToDelete(null);
-      onDeleteClose(); // Cierra el modal
+    setIsSearching(true);
+    try {
+      const results = await searchTickers(value);
+      setTickerResults(results);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSearching(false);
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>, onClose: () => void) => {
+  const handleSubmit = async (e: React.FormEvent, onClose: () => void) => {
     e.preventDefault();
-    
-    const cedearData = {
-      ticker: formState.ticker.toUpperCase(),
-      pesosSpent: Number(formState.pesosSpent),
-      cclPurchase: Number(formState.cclPurchase),
-      pesosCurrent: Number(formState.pesosCurrent),
-      cclCurrent: Number(formState.cclCurrent),
-      purchaseDate: formState.purchaseDate,
-    };
-
-    if (editingItem) {
-      await updateCedearData(editingItem.id, cedearData);
-    } else {
-      await addCedearData(cedearData);
-    }
-
-    await loadData(); 
-    onClose(); 
+    await addTransaction({
+      ticker: formState.ticker,
+      price: Number(formState.price),
+      quantity: Number(formState.quantity),
+      commission: Number(formState.commission),
+      date: formState.date,
+    });
+    await loadAllData();
+    onClose();
   };
 
-  const renderCell = React.useCallback((item: Cedear, columnKey: React.Key) => {
-    const perf = calculatePerformance(item);
+  // Renderizado de celdas para Movimientos
+  const renderMovementCell = (item: any, columnKey: React.Key) => {
+    switch (columnKey) {
+      case "price": return `$ ${item.price.toLocaleString()}`;
+      case "commission": return `$ ${item.commission.toLocaleString()}`;
+      case "actions":
+        return (
+          <Tooltip color="danger" content="Eliminar movimiento">
+            <span className="text-lg text-danger cursor-pointer" onClick={async () => {
+              await deleteTransactionData(item.id);
+              loadAllData();
+            }}>
+              <Trash2 size={18} />
+            </span>
+          </Tooltip>
+        );
+      default: return item[columnKey as keyof typeof item];
+    }
+  };
 
+  // Renderizado de celdas para Portfolio
+  const renderPortfolioCell = (item: any, columnKey: React.Key) => {
+    const isPositive = item.diffCash >= 0;
     switch (columnKey) {
       case "ticker":
         return (
           <div className="flex flex-col">
             <p className="text-bold text-sm">{item.ticker}</p>
-            <p className="text-tiny text-default-400">{item.purchaseDate}</p>
+            <p className="text-tiny text-default-400">{item.sector}</p>
           </div>
         );
-      case "initialUsd":
-        return <p className="text-sm">u$s {perf.initialUsd.toFixed(2)}</p>;
-      case "currentUsd":
-        return <p className="text-sm">u$s {perf.currentUsd.toFixed(2)}</p>;
-      case "profit":
+      case "ppc": return `$ ${item.ppc.toFixed(2)}`;
+      case "investment": return `$ ${item.investment.toLocaleString()}`;
+      case "currentValue": return `$ ${item.currentValue.toLocaleString()}`;
+      case "diffCash":
         return (
-          <Chip
-            className="capitalize"
-            color={perf.isPositive ? "success" : "danger"}
-            size="sm"
-            variant="flat"
-          >
-            {perf.profitUsd > 0 ? "+" : ""}u$s {perf.profitUsd.toFixed(2)} ({perf.profitPercentage.toFixed(2)}%)
+          <span className={isPositive ? "text-success" : "text-danger"}>
+            {isPositive ? "+" : ""}$ {item.diffCash.toLocaleString()}
+          </span>
+        );
+      case "diffPercent":
+        return (
+          <Chip color={isPositive ? "success" : "danger"} variant="flat" size="sm">
+            {isPositive ? "+" : ""}{item.diffPercent.toFixed(2)}%
           </Chip>
         );
-      case "actions":
-        return (
-          <div className="relative flex items-center gap-2">
-            <Tooltip content="Editar inversión">
-              <span 
-                className="text-lg text-default-400 cursor-pointer active:opacity-50"
-                onClick={() => handleEdit(item)}
-              >
-                <Edit2Icon size={18} />
-              </span>
-            </Tooltip>
-            <Tooltip color="danger" content="Eliminar registro">
-              <span 
-                className="text-lg text-danger cursor-pointer active:opacity-50"
-                onClick={() => handleDeleteClick(item.id)}
-              >
-                <Trash2 size={18} />
-              </span>
-            </Tooltip>
-          </div>
-        );
-      default:
-        return null;
+      default: return item[columnKey as keyof typeof item];
     }
-  }, []);
+  };
 
   return (
-    <div className="flex flex-col gap-4 w-full max-w-5xl mx-auto p-4">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Mis Ganancias</h1>
-        <Button color="primary" onPress={handleOpenAdd} endContent={<Plus size={18} />}>
-          Agregar Inversión
-        </Button>
-      </div>
+    <div className="flex flex-col gap-8 w-full max-w-7xl mx-auto p-4">
+      {/* Sección Movimientos */}
+      <section className="flex flex-col gap-4">
+        <div className="flex justify-between items-center">
+          <h2 className="text-xl font-bold">Historial de Movimientos</h2>
+          <Button color="primary" onPress={onOpen} endContent={<Plus size={18} />}>
+            Agregar Inversión
+          </Button>
+        </div>
+        <Table aria-label="Tabla de movimientos">
+          <TableHeader columns={movementColumns}>
+            {(col) => <TableColumn key={col.uid}>{col.name}</TableColumn>}
+          </TableHeader>
+          <TableBody items={movements} emptyContent={isLoading ? "Cargando..." : "Sin movimientos"}>
+            {(item) => (
+              <TableRow key={item.id}>
+                {(key) => <TableCell>{renderMovementCell(item, key)}</TableCell>}
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </section>
 
-      <Table aria-label="Tabla de rendimientos de CEDEARs">
-        <TableHeader columns={columns}>
-          {(column) => (
-            <TableColumn key={column.uid} align={column.uid === "actions" ? "center" : "start"}>
-              {column.name}
-            </TableColumn>
-          )}
-        </TableHeader>
-        <TableBody items={data} emptyContent={isLoading ? "Cargando datos..." : "No hay inversiones registradas."}>
-          {(item) => (
-            <TableRow key={item.id}>
-              {(columnKey) => <TableCell>{renderCell(item, columnKey)}</TableCell>}
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
+      {/* Sección Portfolio */}
+      <section className="flex flex-col gap-4">
+        <h2 className="text-xl font-bold">Mi Portfolio</h2>
+        <Table aria-label="Tabla de portfolio">
+          <TableHeader columns={portfolioColumns}>
+            {(col) => <TableColumn key={col.uid}>{col.name}</TableColumn>}
+          </TableHeader>
+          <TableBody items={portfolio} emptyContent={isLoading ? "Cargando..." : "Sin datos en el portfolio"}>
+            {(item) => (
+              <TableRow key={item.ticker}>
+                {(key) => <TableCell>{renderPortfolioCell(item, key)}</TableCell>}
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </section>
 
-      {/* Modal de Registro / Actualización */}
+      {/* Modal Agregar Inversión */}
       <Modal isOpen={isOpen} onOpenChange={onOpenChange} placement="top-center">
         <ModalContent>
           {(onClose) => (
             <form onSubmit={(e) => handleSubmit(e, onClose)}>
-              <ModalHeader className="flex flex-col gap-1">
-                {editingItem ? "Editar inversión" : "Registrar nueva compra"}
-              </ModalHeader>
+              <ModalHeader>Registrar Nueva Compra</ModalHeader>
               <ModalBody>
+                <Autocomplete
+                  isRequired
+                  label="Ticker"
+                  placeholder="Busca un activo (ej: AAPL, ALUA.BA)"
+                  isLoading={isSearching}
+                  items={tickerResults}
+                  allowsCustomValue
+                  onInputChange={(value) => {
+                    if (value.length >= 2) handleTickerSearch(value);
+                    else setTickerResults([]);
+                  }}
+                  onSelectionChange={(key) => {
+                    if (key) setFormState(prev => ({ ...prev, ticker: key as string }));
+                  }}
+                >
+                  {(item: any) => (
+                    <AutocompleteItem key={item.key}>
+                      {item.label}
+                    </AutocompleteItem>
+                  )}
+                </Autocomplete>
+                <div className="flex gap-2">
+                  <Input 
+                    isRequired label="Precio" type="number" step="0.01" 
+                    value={formState.price} onValueChange={(v) => setFormState({...formState, price: v})} 
+                  />
+                  <Input 
+                    isRequired label="Cantidad" type="number" step="0.01" 
+                    value={formState.quantity} onValueChange={(v) => setFormState({...formState, quantity: v})} 
+                  />
+                </div>
                 <Input 
-                  isRequired autoFocus label="Ticker" placeholder="Ej: AAPL" variant="bordered"
-                  value={formState.ticker} 
-                  onValueChange={(val) => setFormState({ ...formState, ticker: val })}
+                  label="Comisión (Calculada 0.8%)" value={`$ ${formState.commission}`} 
+                  isDisabled variant="faded" 
                 />
-                <div className="flex gap-2">
-                  <Input 
-                    isRequired type="number" step="0.01" label="Pesos Gastados" placeholder="Ej: 150000" variant="bordered"
-                    value={formState.pesosSpent} 
-                    onValueChange={(val) => setFormState({ ...formState, pesosSpent: val })}
-                  />
-                  <Input 
-                    isRequired type="number" step="0.01" label="CCL al Comprar" placeholder="Ej: 1050.50" variant="bordered"
-                    value={formState.cclPurchase} 
-                    onValueChange={(val) => setFormState({ ...formState, cclPurchase: val })}
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Input 
-                    isRequired type="number" step="0.01" label="Valor Actual (ARS)" placeholder="Ej: 210000" variant="bordered"
-                    value={formState.pesosCurrent} 
-                    onValueChange={(val) => setFormState({ ...formState, pesosCurrent: val })}
-                  />
-                  <Input 
-                    isRequired type="number" step="0.01" label="CCL Actual" placeholder="Ej: 1200" variant="bordered"
-                    value={formState.cclCurrent} 
-                    onValueChange={(val) => setFormState({ ...formState, cclCurrent: val })}
-                  />
-                </div>
                 <Input 
-                  isRequired type="date" label="Fecha de Compra" variant="bordered"
-                  value={formState.purchaseDate} 
-                  onValueChange={(val) => setFormState({ ...formState, purchaseDate: val })}
+                  isRequired label="Fecha" type="date" 
+                  value={formState.date} onValueChange={(v) => setFormState({...formState, date: v})} 
                 />
               </ModalBody>
               <ModalFooter>
-                <Button color="danger" variant="flat" onPress={onClose}>
-                  Cancelar
-                </Button>
-                <Button color="primary" type="submit">
-                  {editingItem ? "Actualizar" : "Guardar"}
-                </Button>
+                <Button variant="flat" onPress={onClose}>Cancelar</Button>
+                <Button color="primary" type="submit">Guardar Movimiento</Button>
               </ModalFooter>
             </form>
-          )}
-        </ModalContent>
-      </Modal>
-
-      {/* Modal de Confirmación de Eliminación */}
-      <Modal isOpen={isDeleteOpen} onClose={onDeleteClose} placement="center" backdrop="blur">
-        <ModalContent>
-          {(onClose) => (
-            <>
-              <ModalHeader className="flex flex-col gap-1 text-danger">
-                Confirmar Eliminación
-              </ModalHeader>
-              <ModalBody>
-                <p>
-                  ¿Estás seguro de que querés eliminar esta inversión? Esta acción no se puede deshacer y los datos se borrarán permanentemente.
-                </p>
-              </ModalBody>
-              <ModalFooter>
-                <Button variant="light" onPress={onClose}>
-                  Cancelar
-                </Button>
-                <Button color="danger" onPress={confirmDelete}>
-                  Sí, eliminar
-                </Button>
-              </ModalFooter>
-            </>
           )}
         </ModalContent>
       </Modal>

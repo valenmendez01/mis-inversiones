@@ -5,12 +5,12 @@ export const siteConfig = {
   description: "Portfolio de mis inversiones",
   navItems: [
     {
-      label: "Home",
+      label: "Portfolio",
       href: "/",
     },
     {
-      label: "Docs",
-      href: "/docs",
+      label: "Movimientos",
+      href: "/movimientos",
     },
     {
       label: "Pricing",
