@@ -19,6 +19,13 @@ export const transactions = sqliteTable('transactions', {
   commission: real('commission').notNull(), // precio * cantidad * 0.008
 });
 
+// login
+export const users = sqliteTable('users', {
+  id: text('id').primaryKey(), // Puedes usar un UUID o un string
+  username: text('username').notNull().unique(),
+  password: text('password').notNull(), // Hash de la contraseña
+});
+
 // Tipos para Assets
 export type Asset = typeof assets.$inferSelect;
 export type InsertAsset = typeof assets.$inferInsert;
