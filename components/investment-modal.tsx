@@ -8,10 +8,11 @@ import { parseDate } from "@internationalized/date";
 import { DatePicker } from "@heroui/date-picker";
 import { RadioGroup, Radio } from "@heroui/radio";
 import { Autocomplete, AutocompleteItem } from "@heroui/autocomplete";
+import { Accordion, AccordionItem } from "@heroui/accordion";
 import { I18nProvider } from "@react-aria/i18n";
 import { mutate } from "swr";
 
-import { searchTickers, addTransaction, updateTransactionData } from "@/app/actions";
+import { searchTickers, addTransaction, updateTransactionData, getHistoricalCCL } from "@/app/actions";
 
 interface InvestmentModalProps {
   isOpen: boolean;
@@ -32,6 +33,33 @@ export function InvestmentModal({ isOpen, onOpenChange, initialData }: Investmen
     commission: "0",
     date: new Date().toISOString().split('T')[0],
   });
+
+  const [arsAmount, setArsAmount] = useState("");
+  const [convDate, setConvDate] = useState("");
+  const [convResult, setConvResult] = useState<string | null>(null);
+  const [convError, setConvError] = useState("");
+  const [isConverting, setIsConverting] = useState(false);
+
+  const handleConversion = async () => {
+    setConvError("");
+    setConvResult(null);
+    if (!arsAmount || !convDate) {
+      setConvError("Ingresa el monto en pesos y la fecha.");
+      return;
+    }
+    setIsConverting(true);
+    const res = await getHistoricalCCL(convDate);
+    
+    if (res.success && res.ccl) {
+      const resultUSD = parseFloat(arsAmount) / res.ccl;
+      setConvResult(`CCL: $${res.ccl} | Equivalente: ${resultUSD.toFixed(2)} USD`);
+      // Opcional: Si quieres que el resultado rellene el "Precio" automáticamente, descomenta la siguiente línea:
+      // setFormState(prev => ({ ...prev, price: resultUSD.toFixed(2) }));
+    } else {
+      setConvError(res.error || "Error al convertir.");
+    }
+    setIsConverting(false);
+  };
 
   useEffect(() => {
     const p = parseFloat(formState.price);
@@ -168,6 +196,35 @@ export function InvestmentModal({ isOpen, onOpenChange, initialData }: Investmen
                   value={formState.quantity} onValueChange={(v) => setFormState({...formState, quantity: v})} 
                 />
               </div>
+              <Accordion variant="bordered" isCompact>
+                <AccordionItem key="conversion" aria-label="Conversión rápida" title="Conversión rápida (ARS a USD CCL)" classNames={{ title: "text-sm" }}>
+                  <div className="flex flex-col gap-3 pb-2">
+                    <div className="flex gap-2">
+                      <Input 
+                        label="Monto en ARS" 
+                        type="number" 
+                        step="0.01"
+                        value={arsAmount} 
+                        onValueChange={setArsAmount} 
+                      />
+                      <I18nProvider locale="es-AR">
+                        <DatePicker 
+                          label="Fecha de cotización"
+                          value={convDate ? parseDate(convDate) : null}
+                          onChange={(v) => setConvDate(v ? v.toString() : "")}
+                        />
+                      </I18nProvider>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <Button color="primary" variant="flat" isLoading={isConverting} onPress={handleConversion}>
+                        Convertir
+                      </Button>
+                      {convResult && <p className="text-sm text-success font-medium">{convResult}</p>}
+                      {convError && <p className="text-sm text-danger font-medium">{convError}</p>}
+                    </div>
+                  </div>
+                </AccordionItem>
+              </Accordion>
               <Input 
                 label="Comisión (Calculada 0.8%)" value={`$ ${formState.commission}`} 
                 isDisabled variant="faded" 

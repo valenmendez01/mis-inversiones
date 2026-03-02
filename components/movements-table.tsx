@@ -162,7 +162,7 @@ export function MovementsTable() {
             <Skeleton className="w-48 h-10 rounded-medium" />
             
             {/* Skeleton del Botón "Agregar Inversión" */}
-            <Skeleton className="w-[170px] h-10 rounded-medium" />
+            <Skeleton className="w-[120px] h-10 rounded-medium" />
           </div>
         </div>
         

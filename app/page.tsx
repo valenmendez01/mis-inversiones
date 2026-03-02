@@ -167,6 +167,15 @@ export default function InvestmentsPage() {
             <p className="text-tiny text-default-400">{item.sector}</p>
           </div>
         );
+      case "name":
+        return (
+          <div 
+            className="max-w-[120px] sm:max-w-[200px] lg:max-w-[250px] truncate" 
+            title={item.name}
+          >
+            {item.name}
+          </div>
+        );
       case "investment": return `$ ${item.investment.toLocaleString()}`;
       case "currentValue": return `$ ${item.currentValue.toLocaleString()}`;
       case "ppc": return `$ ${item.ppc.toLocaleString()}`;
