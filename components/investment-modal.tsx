@@ -4,8 +4,11 @@ import React, { useEffect, useState } from "react";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@heroui/modal";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
+import { parseDate } from "@internationalized/date";
+import { DatePicker } from "@heroui/date-picker";
 import { RadioGroup, Radio } from "@heroui/radio";
 import { Autocomplete, AutocompleteItem } from "@heroui/autocomplete";
+import { I18nProvider } from "@react-aria/i18n";
 import { mutate } from "swr";
 
 import { searchTickers, addTransaction, updateTransactionData } from "@/app/actions";
@@ -33,7 +36,7 @@ export function InvestmentModal({ isOpen, onOpenChange, initialData }: Investmen
   useEffect(() => {
     const p = parseFloat(formState.price);
     const q = parseFloat(formState.quantity);
-    if (p && q) {
+    if (!isNaN(p) && !isNaN(q)) {
       setFormState(prev => ({ ...prev, commission: (p * q * 0.008).toFixed(2) }));
     }
   }, [formState.price, formState.quantity]);
@@ -117,16 +120,17 @@ export function InvestmentModal({ isOpen, onOpenChange, initialData }: Investmen
   };
 
   return (
-    <Modal isOpen={isOpen} onOpenChange={onOpenChange} placement="top-center">
+    <Modal isOpen={isOpen} isDismissable={false} isKeyboardDismissDisabled={true} onOpenChange={onOpenChange} placement="center" size="xl">
       <ModalContent>
         {(onClose) => (
           <form onSubmit={(e) => handleSubmit(e, onClose)}>
-            <ModalHeader>{initialData ? "Editar Movimiento" : "Registrar Nueva Compra"}</ModalHeader>
+            <ModalHeader className="text-2xl mt-3">{initialData ? "Editar Movimiento" : "Registrar Nueva Compra"}</ModalHeader>
             <ModalBody>
               <RadioGroup
                 orientation="horizontal"
                 value={formState.type}
                 onValueChange={(v) => setFormState({ ...formState, type: v })}
+                className="mb-2"
               >
                 <Radio value="COMPRA" color="primary">Compra</Radio>
                 <Radio value="VENTA" color="danger">Venta</Radio>
@@ -134,7 +138,7 @@ export function InvestmentModal({ isOpen, onOpenChange, initialData }: Investmen
               <Autocomplete
                 isRequired
                 label="Ticker"
-                placeholder="Busca un activo (ej: AAPL, ALUA.BA)"
+                placeholder="Busca un activo (ej: AAPL, META)"
                 isLoading={isSearching}
                 items={tickerResults}
                 allowsCustomValue
@@ -156,7 +160,7 @@ export function InvestmentModal({ isOpen, onOpenChange, initialData }: Investmen
               </Autocomplete>
               <div className="flex gap-2">
                 <Input 
-                  isRequired label="Precio" type="number" step="0.01" 
+                  isRequired label="Precio unitario en USD CLL" type="number" step="0.01" 
                   value={formState.price} onValueChange={(v) => setFormState({...formState, price: v})} 
                 />
                 <Input 
@@ -168,10 +172,23 @@ export function InvestmentModal({ isOpen, onOpenChange, initialData }: Investmen
                 label="Comisión (Calculada 0.8%)" value={`$ ${formState.commission}`} 
                 isDisabled variant="faded" 
               />
-              <Input 
-                isRequired label="Fecha" type="date" 
-                value={formState.date} onValueChange={(v) => setFormState({...formState, date: v})} 
-              />
+              <I18nProvider locale="es-AR">
+                <DatePicker 
+                  isRequired 
+                  label="Fecha"
+                  // Si hay fecha, la parseamos al tipo DateValue que espera HeroUI
+                  value={formState.date ? parseDate(formState.date.split('T')[0]) : null} 
+                  onChange={(v) => {
+                    // v es un objeto de tipo CalendarDate
+                    // v.toString() lo convierte automáticamente al string "YYYY-MM-DD"
+                    if (v) {
+                      setFormState({ ...formState, date: v.toString() });
+                    } else {
+                      setFormState({ ...formState, date: "" }); // O maneja el estado vacío según tu lógica
+                    }
+                  }} 
+                />
+              </I18nProvider>
 
               {/* Mensaje de Error de Validación */}
               {errorMsg && (
@@ -181,7 +198,7 @@ export function InvestmentModal({ isOpen, onOpenChange, initialData }: Investmen
               )}
             </ModalBody>
             <ModalFooter>
-              <Button variant="flat" onPress={onClose}>Cancelar</Button>
+              <Button color="danger" variant="flat" onPress={onClose}>Cancelar</Button>
               <Button color="primary" type="submit">Guardar Movimiento</Button>
             </ModalFooter>
           </form>

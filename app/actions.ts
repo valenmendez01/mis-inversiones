@@ -12,18 +12,24 @@ interface YahooSearchQuote {
   shortname?: string;
 }
 
-interface YahooFinanceMetadata {
-  quoteType?: { longName?: string };
-  assetProfile?: { sector?: string; country?: string };
-}
-
-interface YahooQuote {
-  symbol: string;
-  regularMarketPrice?: number;
-}
-
 // Creamos un acceso "limpio" para el editor
 const yf = new YahooFinance();
+
+// --- Obtener Dólar CCL ---
+async function getDolarCCL() {
+  try {
+    // Usamos la API de DolarApi. Revalidamos cada 1 hora (3600 seg) para no saturar la API
+    const res = await fetch("https://dolarapi.com/v1/dolares/contadoconliqui", { 
+      next: { revalidate: 3600 } 
+    });
+    const data = await res.json();
+    // Retornamos el precio de venta. Si falla por algún motivo, devolvemos 1 para no romper cálculos
+    return data.venta || 1; 
+  } catch (error) {
+    console.error("Error obteniendo Dólar CCL:", error);
+    return 1; 
+  }
+}
 
 export async function searchTickers(query: string) {
   if (query.length < 2) return [];
@@ -106,24 +112,30 @@ export async function getPortfolioData() {
   const symbols = uniqueTickers.map(t => t.includes('.') ? t : `${t}.BA`);
   
   try {
-    const quotes = await yf.quote(symbols);
+    // Obtenemos cotizaciones en ARS y el CCL actual en simultáneo
+    const [quotes, dolarCCL] = await Promise.all([
+      yf.quote(symbols),
+      getDolarCCL()
+    ]);
 
     return uniqueTickers.map(ticker => {
       const asset = allAssets.find(a => a.ticker === ticker);
-      // 1. Ordenar cronológicamente (del más antiguo al más nuevo)
       const assetTx = allTx
         .filter(t => t.ticker === ticker)
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
       const quote = quotes.find(q => q.symbol.startsWith(ticker));
-      const currentPrice = quote?.regularMarketPrice || 0;
+      
+      // CONVERSIÓN MAGISTRAL: Pasamos el precio de Yahoo (ARS) a USD CCL
+      const currentPriceARS = quote?.regularMarketPrice || 0;
+      const currentPriceUSD = dolarCCL > 1 ? currentPriceARS / dolarCCL : currentPriceARS;
 
       let currentQuantity = 0;
-      let totalInvestedBasis = 0; // Costo de la tenencia actual
-      let realizedGain = 0; // Ganancia/pérdida ya cobrada por ventas
+      let totalInvestedBasis = 0; 
+      let realizedGain = 0; 
 
-      // 2. Calcular el histórico paso a paso
       for (const tx of assetTx) {
+        // tx.price y tx.commission ya están en USD en la base de datos
         if (tx.type === 'COMPRA') {
           const cost = (tx.price * tx.quantity) + tx.commission;
           totalInvestedBasis += cost;
@@ -131,29 +143,22 @@ export async function getPortfolioData() {
         } 
         else if (tx.type === 'VENTA') {
           const ppcActual = currentQuantity > 0 ? totalInvestedBasis / currentQuantity : 0;
-          
-          // Cuánta plata nos costaron originalmente estas acciones que estamos vendiendo
           const costoDeLasAccionesVendidas = ppcActual * tx.quantity;
-          
-          // Cuánta plata nos entró en la mano
           const ingresoNeto = (tx.price * tx.quantity) - tx.commission;
 
-          // Calculamos la ganancia/pérdida real de esta venta
           realizedGain += (ingresoNeto - costoDeLasAccionesVendidas);
-          
-          // Descontamos las acciones y su costo base de nuestro portfolio actual
           currentQuantity -= tx.quantity;
           totalInvestedBasis -= costoDeLasAccionesVendidas; 
         }
       }
 
-      // Si por error de carga vendimos más de lo que teníamos, evitamos números negativos raros
       if (currentQuantity <= 0) {
         currentQuantity = 0;
         totalInvestedBasis = 0;
       }
 
-      const currentValue = currentQuantity * currentPrice;
+      // Todos los cálculos ahora son USD contra USD
+      const currentValue = currentQuantity * currentPriceUSD;
       const ppc = currentQuantity > 0 ? totalInvestedBasis / currentQuantity : 0;
 
       return {
@@ -162,12 +167,12 @@ export async function getPortfolioData() {
         sector: asset?.sector,
         quantity: currentQuantity,
         ppc: ppc,
-        investment: totalInvestedBasis, // Inversión activa (Latente)
-        cedearValue: currentPrice,
+        investment: totalInvestedBasis,
+        cedearValue: currentPriceUSD, // Ahora devuelve el valor en Dólares
         currentValue: currentValue,
-        diffCash: currentValue - totalInvestedBasis, // Resultado Latente $
+        diffCash: currentValue - totalInvestedBasis, 
         diffPercent: totalInvestedBasis > 0 ? ((currentValue / totalInvestedBasis) - 1) * 100 : 0,
-        realizedGain: realizedGain // <--- Nuevo dato: Plata que ya ganaste/perdiste y está en tu bolsillo
+        realizedGain: realizedGain
       };
     });
   } catch (error) {
@@ -176,18 +181,60 @@ export async function getPortfolioData() {
   }
 }
 
-// 1. Obtener el historial de movimientos (Tabla superior)
+// Obtener el historial de movimientos
 export async function getTransactionsData() {
   return await db.select().from(transactions).orderBy(desc(transactions.id));
 }
 
-// 3. Eliminar un movimiento específico
+// Eliminar un movimiento específico
 export async function deleteTransactionData(id: number) {
-  await db.delete(transactions).where(eq(transactions.id, id));
-  return { success: true };
+  try {
+    // 1. Obtener la transacción que se intenta eliminar para saber el ticker y tipo
+    const txToDelete = await db.select().from(transactions).where(eq(transactions.id, id)).get();
+    
+    if (!txToDelete) {
+      return { success: false, error: "Transacción no encontrada." };
+    }
+
+    // 2. Si es una COMPRA, validamos que su eliminación no rompa el historial futuro
+    if (txToDelete.type === 'COMPRA') {
+      // Traemos todo el historial del activo, ordenado cronológicamente
+      const allAssetTx = await db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.ticker, txToDelete.ticker))
+        .orderBy(transactions.date, transactions.id); // Ordenamos por fecha
+        
+      let simulatedQuantity = 0;
+      
+      for (const tx of allAssetTx) {
+        // Ignoramos la transacción que queremos eliminar en esta simulación
+        if (tx.id === id) continue;
+
+        if (tx.type === 'COMPRA') simulatedQuantity += tx.quantity;
+        if (tx.type === 'VENTA') simulatedQuantity -= tx.quantity;
+
+        // Si en CUALQUIER punto de la historia el balance da negativo, bloqueamos
+        if (simulatedQuantity < 0) {
+          return { 
+            success: false, 
+            error: `No puedes eliminar esta compra. Dejaría tu tenencia de ${txToDelete.ticker} en negativo debido a ventas posteriores.` 
+          };
+        }
+      }
+    }
+
+    // 3. Si es una VENTA (eliminarla suma activos) o la simulación de COMPRA fue exitosa, borramos
+    await db.delete(transactions).where(eq(transactions.id, id));
+    return { success: true };
+    
+  } catch (error) {
+    console.error("Error en deleteTransactionData:", error);
+    return { success: false, error: "Error inesperado al eliminar el movimiento." };
+  }
 }
 
-// 4. Actualizar un movimiento (Opcional, si decides editar filas del historial)
+// Actualizar un movimiento (Opcional, si decides editar filas del historial)
 export async function updateTransactionData(id: number, data: Partial<typeof transactions.$inferInsert>) {
   try {
     const updateData = { ...data };
@@ -267,24 +314,30 @@ export async function getEvolutionData() {
   const symbols = uniqueTickers.map(t => t.includes('.') ? t : `${t}.BA`);
   
   try {
-    const quotes = await yf.quote(symbols);
+    // Obtenemos cotizaciones y el CCL
+    const [quotes, dolarCCL] = await Promise.all([
+      yf.quote(symbols),
+      getDolarCCL()
+    ]);
+
     let cumulativeInvestment = 0;
     const currentQuantities: Record<string, number> = {};
 
     return allTx.map(tx => {
-      // 1. Acumular inversión (Costo + Comisión)
+      // 1. Inversión acumulada en USD
       const cost = (tx.price * tx.quantity) + tx.commission;
       cumulativeInvestment += cost;
 
-      // 2. Actualizar cantidades acumuladas por ticker
       currentQuantities[tx.ticker] = (currentQuantities[tx.ticker] || 0) + tx.quantity;
 
-      // 3. Calcular el valor de mercado de la cartera en ese punto temporal 
-      // usando los precios actuales (proyección de crecimiento)
+      // 3. Calcular el valor de mercado convertido a USD
       let currentMarketValue = 0;
       for (const [ticker, qty] of Object.entries(currentQuantities)) {
         const quote = quotes.find(q => q.symbol.startsWith(ticker));
-        currentMarketValue += qty * (quote?.regularMarketPrice || 0);
+        const priceARS = quote?.regularMarketPrice || 0;
+        const priceUSD = dolarCCL > 1 ? priceARS / dolarCCL : priceARS;
+        
+        currentMarketValue += qty * priceUSD;
       }
 
       return {
