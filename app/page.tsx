@@ -18,6 +18,7 @@ import { ChartTooltip } from "@/components/charts/tooltip";
 import BarChart from "@/components/charts/bar-chart";
 import Bar from "@/components/charts/bar";
 import XAxis from "@/components/charts/x-axis";
+import PieCenter from "@/components/charts/pie-center";
 
 const portfolioColumns = [
   { name: "TICKER", uid: "ticker" },
@@ -133,6 +134,11 @@ export default function InvestmentsPage() {
     return portfolio.slice(start, end);
   }, [page, portfolio]);
 
+  // --- Sumamos la ganancia ya realizada de todos los activos ---
+  const totalRealizedGain = useMemo(() => {
+    return portfolio.reduce((acc: number, item: any) => acc + (item.realizedGain || 0), 0);
+  }, [portfolio]);
+
   const renderPortfolioCell = (item: any, columnKey: React.Key) => {
     const isPositive = item.diffCash >= 0;
     switch (columnKey) {
@@ -218,10 +224,10 @@ export default function InvestmentsPage() {
 
               <Card className="hover:scale-105 transition-transform duration-200 hover:shadow-lg">
                 <CardBody className="flex flex-col items-center justify-center p-6 text-center">
-                  <p className="text-sm text-default-500 uppercase font-bold tracking-wider">Total Actual</p>
-                  <p className="text-xl font-bold mt-2">
-                    $ {totalActual.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                  </p>
+                  <p className="text-sm text-default-500 uppercase font-bold tracking-wider">Ganancia Realizada</p>
+                  <p className={`text-xl font-bold mt-2 ${totalRealizedGain >= 0 ? "text-success" : "text-danger"}`}>
+                  {totalRealizedGain >= 0 ? "+" : ""}$ {totalRealizedGain.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
                 </CardBody>
               </Card>
 
@@ -249,12 +255,18 @@ export default function InvestmentsPage() {
               <PieChart
                 data={pieChartData}
                 size={280}
+                innerRadius={70}
                 hoveredIndex={hoveredIndex}
                 onHoverChange={setHoveredIndex}
               >
                 {pieChartData.map((_, index) => (
                   <PieSlice key={index} index={index} />
                 ))}
+              
+                <PieCenter 
+                  defaultLabel="Total Actual" 
+                  prefix="$ "
+                />
               </PieChart>
 
               <Legend

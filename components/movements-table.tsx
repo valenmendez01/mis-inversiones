@@ -5,6 +5,7 @@ import { Table, TableHeader, TableBody, TableColumn, TableRow, TableCell } from 
 import { Pagination } from "@heroui/pagination";
 import { Button } from "@heroui/button";
 import { Tooltip } from "@heroui/tooltip";
+import { Chip } from "@heroui/chip";
 import { useDisclosure } from "@heroui/modal";
 import { Trash2, Plus, Pencil } from "lucide-react";
 import useSWR, { mutate } from "swr"; // <-- Importamos SWR
@@ -18,6 +19,7 @@ const movementColumns = [
   { name: "CANTIDAD", uid: "quantity" },
   { name: "COMISIÓN", uid: "commission" },
   { name: "FECHA", uid: "date" },
+  { name: "TIPO", uid: "type" },
   { name: "ACCIONES", uid: "actions" },
 ];
 
@@ -54,6 +56,16 @@ export function MovementsTable() {
         return new Date(item.date + 'T00:00:00').toLocaleDateString('es-AR', {
           day: '2-digit', month: '2-digit', year: 'numeric'
         });
+      case "type":
+        return (
+          <Chip 
+            color={item.type === "COMPRA" ? "success" : "danger"} 
+            variant="flat" 
+            size="sm"
+          >
+            {item.type}
+          </Chip>
+        );
       case "actions":
         return (
           <div className="flex gap-5">

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@heroui/modal";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
+import { RadioGroup, Radio } from "@heroui/radio";
 import { Autocomplete, AutocompleteItem } from "@heroui/autocomplete";
 import { mutate } from "swr";
 
@@ -18,8 +19,10 @@ interface InvestmentModalProps {
 export function InvestmentModal({ isOpen, onOpenChange, initialData }: InvestmentModalProps) {
   const [tickerResults, setTickerResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
   
   const [formState, setFormState] = useState({
+    type: "COMPRA",
     ticker: "",
     price: "",
     quantity: "",
@@ -39,13 +42,14 @@ export function InvestmentModal({ isOpen, onOpenChange, initialData }: Investmen
   if (initialData) {
     setFormState({
       ticker: initialData.ticker,
+      type: initialData.type,
       price: String(initialData.price),
       quantity: String(initialData.quantity),
       commission: String(initialData.commission),
       date: initialData.date,
     });
   } else {
-    setFormState({ ticker: "", price: "", quantity: "", commission: "0", date: new Date().toISOString().split('T')[0] });
+    setFormState({ ticker: "", type: "COMPRA", price: "", quantity: "", commission: "0", date: new Date().toISOString().split('T')[0] });
   }
 }, [initialData]);
 
@@ -67,26 +71,43 @@ export function InvestmentModal({ isOpen, onOpenChange, initialData }: Investmen
 
   const handleSubmit = async (e: React.FormEvent, onClose: () => void) => {
     e.preventDefault();
-
-    const transactionPayload = {
+    setErrorMsg(""); // Limpiamos errores anteriores
+    
+    // 1. Armamos el objeto con los datos del formulario
+    const payload = {
       ticker: formState.ticker,
+      type: formState.type as "COMPRA" | "VENTA",
       price: Number(formState.price),
       quantity: Number(formState.quantity),
       commission: Number(formState.commission),
       date: formState.date,
     };
 
-    if (initialData?.id) {
-      await updateTransactionData(initialData.id, transactionPayload);
+    // Le decimos a TypeScript que 'result' puede contener un 'error' opcional
+    let result: { success: boolean; error?: string };
+
+    if (initialData && initialData.id) {
+      // Usamos "as any" o aserción de tipo para evitar el conflicto con actions.ts
+      result = (await updateTransactionData(initialData.id, payload)) as { success: boolean; error?: string };
     } else {
-      await addTransaction(transactionPayload);
+      result = (await addTransaction(payload)) as { success: boolean; error?: string };
     }
     
+    // 3. Si la validación del backend falla, mostramos el error y cortamos la ejecución
+    if (!result.success) {
+      setErrorMsg(result.error || "Error al procesar la operación.");
+      return; 
+    }
+
+    // 4. Si salió todo bien, actualizamos la data y cerramos
     mutate("portfolio");
     mutate("movements");
     
     onClose();
+    
+    // 5. Limpiamos el formulario para la próxima vez
     setFormState({
+      type: "COMPRA",
       ticker: "",
       price: "",
       quantity: "",
@@ -102,6 +123,14 @@ export function InvestmentModal({ isOpen, onOpenChange, initialData }: Investmen
           <form onSubmit={(e) => handleSubmit(e, onClose)}>
             <ModalHeader>{initialData ? "Editar Movimiento" : "Registrar Nueva Compra"}</ModalHeader>
             <ModalBody>
+              <RadioGroup
+                orientation="horizontal"
+                value={formState.type}
+                onValueChange={(v) => setFormState({ ...formState, type: v })}
+              >
+                <Radio value="COMPRA" color="primary">Compra</Radio>
+                <Radio value="VENTA" color="danger">Venta</Radio>
+              </RadioGroup>
               <Autocomplete
                 isRequired
                 label="Ticker"
@@ -143,6 +172,13 @@ export function InvestmentModal({ isOpen, onOpenChange, initialData }: Investmen
                 isRequired label="Fecha" type="date" 
                 value={formState.date} onValueChange={(v) => setFormState({...formState, date: v})} 
               />
+
+              {/* Mensaje de Error de Validación */}
+              {errorMsg && (
+                <div className="p-3 bg-danger/10 border border-danger/30 rounded-lg text-danger text-sm font-medium text-center">
+                  {errorMsg}
+                </div>
+              )}
             </ModalBody>
             <ModalFooter>
               <Button variant="flat" onPress={onClose}>Cancelar</Button>

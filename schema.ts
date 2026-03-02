@@ -13,6 +13,7 @@ export const assets = sqliteTable('assets', {
 export const transactions = sqliteTable('transactions', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   ticker: text('ticker').notNull().references(() => assets.ticker),
+  type: text('type', { enum: ['COMPRA', 'VENTA'] }).notNull().default('COMPRA'),
   price: real('price').notNull(), // Precio por unidad
   quantity: real('quantity').notNull(),
   date: text('date').notNull(),

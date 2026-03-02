@@ -45,8 +45,32 @@ export async function searchTickers(query: string) {
 
 export async function addTransaction(data: InsertTransaction) {
   try {
-    const cleanTicker = data.ticker.split(" - ")[0].trim().toUpperCase();
+    // --- VALIDACIÓN PARA VENTAS ---
+    if (data.type === 'VENTA') {
+      // Traemos todos los movimientos de ese ticker
+      const allAssetTx = await db.select().from(transactions).where(eq(transactions.ticker, data.ticker));
+      
+      let currentQuantity = 0;
+      for (const tx of allAssetTx) {
+        if (tx.type === 'COMPRA') currentQuantity += tx.quantity;
+        if (tx.type === 'VENTA') currentQuantity -= tx.quantity;
+      }
 
+      // Validamos que tenga el activo
+      if (currentQuantity === 0) {
+        return { success: false, error: "No tienes tenencia de este activo para vender." };
+      }
+      
+      // Validamos que no intente vender más de lo que tiene
+      if (data.quantity > currentQuantity) {
+        return { 
+          success: false, 
+          error: `No puedes vender más de lo que tienes. Disponibles: ${currentQuantity}` 
+        };
+      }
+    }
+
+    const cleanTicker = data.ticker.split(" - ")[0].trim().toUpperCase();
     const existing = await db.select().from(assets).where(eq(assets.ticker, cleanTicker)).get();
     
     if (!existing) {
@@ -86,26 +110,64 @@ export async function getPortfolioData() {
 
     return uniqueTickers.map(ticker => {
       const asset = allAssets.find(a => a.ticker === ticker);
-      const assetTx = allTx.filter(t => t.ticker === ticker);
-      const quote = quotes.find(q => q.symbol.startsWith(ticker));
+      // 1. Ordenar cronológicamente (del más antiguo al más nuevo)
+      const assetTx = allTx
+        .filter(t => t.ticker === ticker)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-      const totalQuantity = assetTx.reduce((acc, t) => acc + t.quantity, 0);
-      const totalInvestment = assetTx.reduce((acc, t) => acc + (t.price * t.quantity) + t.commission, 0);
+      const quote = quotes.find(q => q.symbol.startsWith(ticker));
       const currentPrice = quote?.regularMarketPrice || 0;
-      const currentValue = totalQuantity * currentPrice;
+
+      let currentQuantity = 0;
+      let totalInvestedBasis = 0; // Costo de la tenencia actual
+      let realizedGain = 0; // Ganancia/pérdida ya cobrada por ventas
+
+      // 2. Calcular el histórico paso a paso
+      for (const tx of assetTx) {
+        if (tx.type === 'COMPRA') {
+          const cost = (tx.price * tx.quantity) + tx.commission;
+          totalInvestedBasis += cost;
+          currentQuantity += tx.quantity;
+        } 
+        else if (tx.type === 'VENTA') {
+          const ppcActual = currentQuantity > 0 ? totalInvestedBasis / currentQuantity : 0;
+          
+          // Cuánta plata nos costaron originalmente estas acciones que estamos vendiendo
+          const costoDeLasAccionesVendidas = ppcActual * tx.quantity;
+          
+          // Cuánta plata nos entró en la mano
+          const ingresoNeto = (tx.price * tx.quantity) - tx.commission;
+
+          // Calculamos la ganancia/pérdida real de esta venta
+          realizedGain += (ingresoNeto - costoDeLasAccionesVendidas);
+          
+          // Descontamos las acciones y su costo base de nuestro portfolio actual
+          currentQuantity -= tx.quantity;
+          totalInvestedBasis -= costoDeLasAccionesVendidas; 
+        }
+      }
+
+      // Si por error de carga vendimos más de lo que teníamos, evitamos números negativos raros
+      if (currentQuantity <= 0) {
+        currentQuantity = 0;
+        totalInvestedBasis = 0;
+      }
+
+      const currentValue = currentQuantity * currentPrice;
+      const ppc = currentQuantity > 0 ? totalInvestedBasis / currentQuantity : 0;
 
       return {
-        location: asset?.location,
-        sector: asset?.sector,
         ticker,
         name: asset?.name,
-        quantity: totalQuantity,
-        investment: totalInvestment,
+        sector: asset?.sector,
+        quantity: currentQuantity,
+        ppc: ppc,
+        investment: totalInvestedBasis, // Inversión activa (Latente)
         cedearValue: currentPrice,
-        currentValue,
-        ppc: totalQuantity > 0 ? totalInvestment / totalQuantity : 0,
-        diffCash: currentValue - totalInvestment,
-        diffPercent: totalInvestment > 0 ? (currentValue / totalInvestment - 1) * 100 : 0,
+        currentValue: currentValue,
+        diffCash: currentValue - totalInvestedBasis, // Resultado Latente $
+        diffPercent: totalInvestedBasis > 0 ? ((currentValue / totalInvestedBasis) - 1) * 100 : 0,
+        realizedGain: realizedGain // <--- Nuevo dato: Plata que ya ganaste/perdiste y está en tu bolsillo
       };
     });
   } catch (error) {
@@ -119,13 +181,6 @@ export async function getTransactionsData() {
   return await db.select().from(transactions).orderBy(desc(transactions.id));
 }
 
-// 2. Agregar un movimiento (Ya lo tienes como addTransaction, 
-// pero asegúrate de que use InsertTransaction de schema.ts)
-export async function addTransactionData(data: typeof transactions.$inferInsert) {
-  await db.insert(transactions).values(data);
-  return { success: true };
-}
-
 // 3. Eliminar un movimiento específico
 export async function deleteTransactionData(id: number) {
   await db.delete(transactions).where(eq(transactions.id, id));
@@ -137,6 +192,41 @@ export async function updateTransactionData(id: number, data: Partial<typeof tra
   try {
     const updateData = { ...data };
 
+    // Si están actualizando algo que afecta la cantidad, el tipo o el ticker...
+    if (updateData.type === 'VENTA' || (updateData.ticker && updateData.quantity)) {
+      const targetTicker = updateData.ticker ? updateData.ticker.split(" - ")[0].trim().toUpperCase() : undefined;
+      
+      // Si el tipo es VENTA, tenemos que hacer la validación
+      if (updateData.type === 'VENTA' && targetTicker && updateData.quantity) {
+        
+        // Traemos todos los movimientos de ese ticker
+        const allAssetTx = await db.select().from(transactions).where(eq(transactions.ticker, targetTicker));
+        
+        let currentQuantity = 0;
+        for (const tx of allAssetTx) {
+          // MUY IMPORTANTE: Ignoramos la transacción actual que estamos editando
+          // para no contarla dos veces en el cálculo de tenencia
+          if (tx.id === id) continue; 
+
+          if (tx.type === 'COMPRA') currentQuantity += tx.quantity;
+          if (tx.type === 'VENTA') currentQuantity -= tx.quantity;
+        }
+
+        // Validamos que tenga el activo
+        if (currentQuantity === 0) {
+          return { success: false, error: "No tienes tenencia de este activo para vender." };
+        }
+        
+        // Validamos que no intente vender más de lo que tiene (ignorando el movimiento actual)
+        if (updateData.quantity > currentQuantity) {
+          return { 
+            success: false, 
+            error: `No puedes vender más de lo que tienes. Disponibles: ${currentQuantity}` 
+          };
+        }
+      }
+    }
+
     // Si el ticker viene en el objeto de actualización, lo limpiamos
     if (updateData.ticker) {
       updateData.ticker = updateData.ticker.split(" - ")[0].trim().toUpperCase();
@@ -145,9 +235,6 @@ export async function updateTransactionData(id: number, data: Partial<typeof tra
       const existing = await db.select().from(assets).where(eq(assets.ticker, updateData.ticker)).get();
       
       if (!existing) {
-        // Si el activo es nuevo debido al cambio de ticker, 
-        // podrías llamar a yf.quoteSummary aquí para crearlo en 'assets',
-        // de lo contrario la actualización fallará nuevamente.
         const meta = await yf.quoteSummary(updateData.ticker, { modules: ["assetProfile", "quoteType"] });
         
         await db.insert(assets).values({
@@ -167,7 +254,8 @@ export async function updateTransactionData(id: number, data: Partial<typeof tra
     return { success: true };
   } catch (error) {
     console.error("Error en updateTransactionData:", error);
-    return { success: false };
+    // Cambiamos a devolver error de forma estructurada para que TypeScript no se queje
+    return { success: false, error: "Error inesperado al actualizar la transacción." };
   }
 }
 
