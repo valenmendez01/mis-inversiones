@@ -23,6 +23,7 @@ import BarChart from "@/components/charts/bar-chart";
 import Bar from "@/components/charts/bar";
 import XAxis from "@/components/charts/x-axis";
 import PieCenter from "@/components/charts/pie-center";
+import YAxis from "@/components/charts/y-axis";
 
 const portfolioColumns = [
   { name: "TICKER", uid: "ticker", tooltip: "Símbolo identificador del activo en el mercado" },
@@ -56,11 +57,21 @@ export default function InvestmentsPage() {
   }, [portfolio, searchQuery]);
 
   const processedEvolution = useMemo(() => {
-    return evolution.map((d: any) => ({
-      ...d,
-      // Convertimos el string ISO que viene del servidor a un objeto Date real
-      date: new Date(d.date)
-    })).filter(d => !isNaN(d.date.getTime())); // Filtramos posibles fechas rotas
+    return evolution.map((d: any) => {
+      // Calculamos el rendimiento porcentual histórico
+      const percentReturn = d.invested > 0 ? ((d.value / d.invested) - 1) * 100 : 0;
+      const realReturn = Number(percentReturn.toFixed(2));
+      
+      // Clampeamos a 0 si es negativo solo para que la línea del gráfico no se rompa hacia abajo
+      const plotReturn = realReturn < 0 ? 0 : realReturn;
+      
+      return {
+        ...d,
+        date: new Date(d.date),
+        percentReturn: realReturn, // Valor real (para el Tooltip)
+        plotReturn: plotReturn     // Valor visual (para dibujar el Área)
+      };
+    }).filter((d: any) => !isNaN(d.date.getTime()));
   }, [evolution]);
 
   const [sortType, setSortType] = useState("significance");
@@ -406,9 +417,8 @@ export default function InvestmentsPage() {
           {/* AREA CHART: Evolución de Inversión vs Valor */}
           <Card className="p-4">
             <h3 className="text-xl font-bold p-4">Evolución de Patrimonio</h3>
-            <div className="h-[300px] w-full">
-              <AreaChart data={processedEvolution}>
-                <Grid horizontal />
+            <div className="w-full">
+              <AreaChart data={processedEvolution} aspectRatio="2/1">
                 <Area 
                   dataKey="value"
                   fill="var(--chart-line-primary)" 
@@ -485,6 +495,35 @@ export default function InvestmentsPage() {
                 />
               </BarChart>
             </div>
+          </Card>
+        </section>
+        {/* Gráfico de Rendimiento Porcentual Histórico */}
+        <section className="w-full mt-4 mb-8">
+          <Card className="p-4">
+            <h3 className="text-xl font-bold p-4">Rendimiento Histórico Acumulado (USD)</h3>
+            <AreaChart 
+              data={processedEvolution}
+              aspectRatio="4/1"
+            >
+              <Grid horizontal vertical />
+              <Area 
+                dataKey="plotReturn" /* <-- Usa el valor que nunca baja de 0 */
+                fill="#10b98120"
+                stroke="#10b981"
+              />
+              <YAxis />
+              <XAxis />
+              <ChartTooltip 
+                showDots={true}
+                rows={(point: any) => [
+                  { 
+                    color: point.percentReturn < 0 ? "#ef4444" : "#10b981",
+                    label: "Rendimiento", 
+                    value: `${Number(point.percentReturn).toFixed(2)}%` 
+                  }
+                ]}  
+              />
+            </AreaChart>
           </Card>
         </section>
       </section>
