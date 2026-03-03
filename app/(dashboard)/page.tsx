@@ -8,7 +8,7 @@ import { Card, CardBody } from "@heroui/card";
 import { Select, SelectItem } from "@heroui/select";
 import { Tooltip } from "@heroui/tooltip";
 import useSWR from "swr";
-import { getPortfolioData, getEvolutionData } from "./actions";
+import { getPortfolioData, getEvolutionData } from "../actions";
 import PieChart from "@/components/charts/pie-chart";
 import PieSlice from "@/components/charts/pie-slice";
 import { Legend, LegendItem, LegendLabel, LegendMarker, LegendValue } from "@/components/charts/legend";

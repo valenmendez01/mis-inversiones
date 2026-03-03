@@ -4,9 +4,10 @@ import { useState } from "react";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Card, CardHeader, CardBody } from "@heroui/card";
-import { LockIcon, UserIcon } from "lucide-react"; // Asegúrate de tener lucide-react instalado
+import { LockIcon, UserIcon } from "lucide-react"; 
 import { login } from "@/app/auth-actions";
 import { title } from "@/components/primitives";
+import Link from "next/link"; // Agregado
 
 export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +79,14 @@ export default function LoginPage() {
               {loading ? "Iniciando sesión..." : "Ingresar"}
             </Button>
           </form>
+
+          {/* Enlace al registro */}
+          <p className="text-center text-small text-default-500 mt-6">
+            ¿No tienes un portafolio?{" "}
+            <Link href="/register" className="text-primary hover:underline font-medium">
+              Regístrate aquí
+            </Link>
+          </p>
         </CardBody>
       </Card>
     </div>

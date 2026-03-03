@@ -70,7 +70,7 @@ export async function register(formData: FormData) {
     const dbData = await createDbRes.json();
     
     // Turso puede devolver un hostname genérico. Lo armamos si es necesario.
-    const dbUrl = `libsql://${dbData.database.hostname}`;
+    const dbUrl = `libsql://${dbData.database.Hostname}`;
 
     // 3. Crear un Token de acceso permanente para esta base de datos
     const createTokenRes = await fetch(`https://api.turso.tech/v1/organizations/${orgName}/databases/${dbName}/auth/tokens`, {

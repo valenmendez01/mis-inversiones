@@ -4,7 +4,8 @@ import { decrypt } from "@/app/lib/session";
 import { cookies } from "next/headers";
 
 const protectedRoutes = ["/", "/movimientos", "/crypto"];
-const publicRoutes = ["/login"];
+// Agregamos /register a las rutas públicas
+const publicRoutes = ["/login", "/register"]; 
 
 export default async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
