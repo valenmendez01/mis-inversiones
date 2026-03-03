@@ -2,9 +2,11 @@
 "use server";
 
 import YahooFinance from 'yahoo-finance2';
-import { db } from "./db";
-import { assets, transactions, type InsertTransaction } from "../schema";
+import { masterDb, connectTenant } from "./db";
+import { assets, transactions, users, type InsertTransaction } from "../schema";
 import { desc, eq } from "drizzle-orm";
+import { cookies } from "next/headers";
+import { decrypt } from "./lib/session";
 
 // 1. Interfaces para mantener el tipado después de limpiar el acceso
 interface YahooSearchQuote {
@@ -14,6 +16,26 @@ interface YahooSearchQuote {
 
 // Creamos un acceso "limpio" para el editor
 const yf = new YahooFinance();
+
+// --- HELPER MAESTRO: Obtener conexión a la BD del cliente ---
+async function getTenantDb() {
+  const cookieStore = await cookies();
+  const session = cookieStore.get("session")?.value;
+  if (!session) throw new Error("No autorizado");
+  
+  const payload = await decrypt(session);
+  const userId = payload.userId as string;
+
+  // 1. Buscamos las credenciales en la Master DB
+  const user = await masterDb.select().from(users).where(eq(users.id, userId)).get();
+  
+  if (!user || !user.dbUrl || !user.dbToken) {
+    throw new Error("No tienes una base de datos asignada.");
+  }
+
+  // 2. Devolvemos la instancia de Drizzle conectada a SU base de datos
+  return connectTenant(user.dbUrl, user.dbToken);
+}
 
 // --- Obtener Dólar CCL ---
 async function getDolarCCL() {
@@ -51,13 +73,16 @@ export async function searchTickers(query: string) {
 
 export async function addTransaction(data: InsertTransaction) {
   try {
+    // Obtenemos la BD privada
+    const tenantDb = await getTenantDb();
+
     // 1. Limpiamos el ticker ANTES de hacer la validación
     const cleanTicker = data.ticker.split(" - ")[0].trim().toUpperCase();
 
     // --- VALIDACIÓN PARA VENTAS ---
     if (data.type === 'VENTA') {
       // 2. Usamos "cleanTicker" en lugar de "data.ticker" para buscar en la base de datos
-      const allAssetTx = await db.select().from(transactions).where(eq(transactions.ticker, cleanTicker));
+      const allAssetTx = await tenantDb.select().from(transactions).where(eq(transactions.ticker, cleanTicker));
       
       let currentQuantity = 0;
       for (const tx of allAssetTx) {
@@ -79,7 +104,7 @@ export async function addTransaction(data: InsertTransaction) {
       }
     }
 
-    const existing = await db.select().from(assets).where(eq(assets.ticker, cleanTicker)).get();
+    const existing = await tenantDb.select().from(assets).where(eq(assets.ticker, cleanTicker)).get();
     
     // Si NO existe, O si existe pero su sector quedó guardado como "Otros" o nulo
     if (!existing || existing.sector === "Otros" || !existing.sector) {
@@ -91,7 +116,7 @@ export async function addTransaction(data: InsertTransaction) {
 
         if (!existing) {
           // Si no existía en absoluto, lo insertamos
-          await db.insert(assets).values({
+          await tenantDb.insert(assets).values({
             ticker: cleanTicker,
             name: meta.quoteType?.longName || cleanTicker,
             sector: assetSector,
@@ -100,7 +125,7 @@ export async function addTransaction(data: InsertTransaction) {
           });
         } else {
           // Si existía pero tenía sector "Otros", lo actualizamos (AUTO-REPARACIÓN)
-          await db.update(assets)
+          await tenantDb.update(assets)
             .set({ sector: assetSector, updatedAt: new Date() })
             .where(eq(assets.ticker, cleanTicker));
         }
@@ -109,7 +134,7 @@ export async function addTransaction(data: InsertTransaction) {
       }
     }
 
-    await db.insert(transactions).values({
+    await tenantDb.insert(transactions).values({
       ...data,
       ticker: cleanTicker
     });
@@ -121,8 +146,10 @@ export async function addTransaction(data: InsertTransaction) {
 }
 
 export async function getPortfolioData() {
-  const allTx = await db.select().from(transactions);
-  const allAssets = await db.select().from(assets);
+  const tenantDb = await getTenantDb();
+
+  const allTx = await tenantDb.select().from(transactions);
+  const allAssets = await tenantDb.select().from(assets);
   
   const uniqueTickers = Array.from(new Set(allTx.map(t => t.ticker)));
   if (uniqueTickers.length === 0) return [];
@@ -203,14 +230,21 @@ export async function getPortfolioData() {
 
 // Obtener el historial de movimientos
 export async function getTransactionsData() {
-  return await db.select().from(transactions).orderBy(desc(transactions.id));
+  try {
+    const tenantDb = await getTenantDb();
+    return await tenantDb.select().from(transactions).orderBy(desc(transactions.id));
+  } catch (error) {
+    return [];
+  }
 }
 
 // Eliminar un movimiento específico
 export async function deleteTransactionData(id: number) {
   try {
+    const tenantDb = await getTenantDb();
+
     // 1. Obtener la transacción que se intenta eliminar para saber el ticker y tipo
-    const txToDelete = await db.select().from(transactions).where(eq(transactions.id, id)).get();
+    const txToDelete = await tenantDb.select().from(transactions).where(eq(transactions.id, id)).get();
     
     if (!txToDelete) {
       return { success: false, error: "Transacción no encontrada." };
@@ -219,7 +253,7 @@ export async function deleteTransactionData(id: number) {
     // 2. Si es una COMPRA, validamos que su eliminación no rompa el historial futuro
     if (txToDelete.type === 'COMPRA') {
       // Traemos todo el historial del activo, ordenado cronológicamente
-      const allAssetTx = await db
+      const allAssetTx = await tenantDb
         .select()
         .from(transactions)
         .where(eq(transactions.ticker, txToDelete.ticker))
@@ -245,7 +279,7 @@ export async function deleteTransactionData(id: number) {
     }
 
     // 3. Si es una VENTA (eliminarla suma activos) o la simulación de COMPRA fue exitosa, borramos
-    await db.delete(transactions).where(eq(transactions.id, id));
+    await tenantDb.delete(transactions).where(eq(transactions.id, id));
     return { success: true };
     
   } catch (error) {
@@ -259,6 +293,8 @@ export async function updateTransactionData(id: number, data: Partial<typeof tra
   try {
     const updateData = { ...data };
 
+    const tenantDb = await getTenantDb();
+
     // Si están actualizando algo que afecta la cantidad, el tipo o el ticker...
     if (updateData.type === 'VENTA' || (updateData.ticker && updateData.quantity)) {
       const targetTicker = updateData.ticker ? updateData.ticker.split(" - ")[0].trim().toUpperCase() : undefined;
@@ -267,7 +303,7 @@ export async function updateTransactionData(id: number, data: Partial<typeof tra
       if (updateData.type === 'VENTA' && targetTicker && updateData.quantity) {
         
         // Traemos todos los movimientos de ese ticker
-        const allAssetTx = await db.select().from(transactions).where(eq(transactions.ticker, targetTicker));
+        const allAssetTx = await tenantDb.select().from(transactions).where(eq(transactions.ticker, targetTicker));
         
         let currentQuantity = 0;
         for (const tx of allAssetTx) {
@@ -298,7 +334,7 @@ export async function updateTransactionData(id: number, data: Partial<typeof tra
     if (updateData.ticker) {
       updateData.ticker = updateData.ticker.split(" - ")[0].trim().toUpperCase();
       
-      const existing = await db.select().from(assets).where(eq(assets.ticker, updateData.ticker)).get();
+      const existing = await tenantDb.select().from(assets).where(eq(assets.ticker, updateData.ticker)).get();
       
       if (!existing || existing.sector === "Otros" || !existing.sector) {
         try {
@@ -308,7 +344,7 @@ export async function updateTransactionData(id: number, data: Partial<typeof tra
           const assetSector = meta.assetProfile?.sector || meta.fundProfile?.categoryName || (isETF ? "ETF" : "Otros");
 
           if (!existing) {
-            await db.insert(assets).values({
+            await tenantDb.insert(assets).values({
               ticker: updateData.ticker,
               name: meta.quoteType?.longName || updateData.ticker,
               sector: assetSector,
@@ -316,7 +352,7 @@ export async function updateTransactionData(id: number, data: Partial<typeof tra
               updatedAt: new Date(),
             });
           } else {
-            await db.update(assets)
+            await tenantDb.update(assets)
               .set({ sector: assetSector, updatedAt: new Date() })
               .where(eq(assets.ticker, updateData.ticker));
           }
@@ -326,7 +362,7 @@ export async function updateTransactionData(id: number, data: Partial<typeof tra
       }
     }
 
-    await db.update(transactions)
+    await tenantDb.update(transactions)
       .set(updateData)
       .where(eq(transactions.id, id));
 
@@ -339,7 +375,9 @@ export async function updateTransactionData(id: number, data: Partial<typeof tra
 }
 
 export async function getEvolutionData() {
-  const allTx = await db.select().from(transactions).orderBy(transactions.date);
+  const tenantDb = await getTenantDb();
+
+  const allTx = await tenantDb.select().from(transactions).orderBy(transactions.date);
   if (allTx.length === 0) return [];
 
   const uniqueTickers = Array.from(new Set(allTx.map(t => t.ticker)));

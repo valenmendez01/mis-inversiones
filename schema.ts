@@ -1,5 +1,7 @@
 import { sqliteTable, text, real, integer } from 'drizzle-orm/sqlite-core';
 
+// --- TABLAS DEL TENANT (Estarán en la BD de cada cliente) ---
+
 // Metadatos del activo (se cargan una sola vez)
 export const assets = sqliteTable('assets', {
   ticker: text('ticker').primaryKey(),
@@ -20,11 +22,15 @@ export const transactions = sqliteTable('transactions', {
   commission: real('commission').notNull(), // precio * cantidad * 0.008
 });
 
+// --- TABLA MASTER (Estará solo en la BD principal) ---
+
 // login
 export const users = sqliteTable('users', {
-  id: text('id').primaryKey(), // Puedes usar un UUID o un string
+  id: text('id').primaryKey(),
   username: text('username').notNull().unique(),
   password: text('password').notNull(), // Hash de la contraseña
+  dbUrl: text('db_url'),     // URL de la base de datos Turso del cliente
+  dbToken: text('db_token'), // Token de acceso de esa base
 });
 
 // Tipos para Assets
