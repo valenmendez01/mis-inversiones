@@ -16,7 +16,7 @@ Además, la plataforma se integra en el backend con Yahoo Finance y APIs de coti
 
 ## Configuración para usar
 
-### Instalar dependencias
+### Instalar dependencias en raiz del proyecto (terminal VSCode)
 
 ```bash
 npm install
@@ -24,7 +24,7 @@ npm install
 
 ### Iniciar turso en PowerShell
 ```bash
-wsl
+wsl  # instalarlo si da error
 ```
 ```bash
 export PATH="/root/.turso:$PATH"
@@ -57,7 +57,7 @@ turso auth api-tokens mint api-inversiones
 Copiar token --> Variable .env **TURSO_API_TOKEN**
 
 ### Crear grupo
-Ir al dashboard de turso, crear grupo llamado "inversiones" con location en Virginia (es la mas cercana a Argentina)
+Ir al dashboard de turso, eliminar el grupo default si existe, y crear grupo llamado "inversiones" con location en Virginia (es la mas cercana a Argentina)
 
 ### Crear base de datos master
 ```bash
@@ -80,12 +80,11 @@ turso db tokens create master-db
 Copiar token --> Variable .env **TURSO_AUTH_TOKEN**
 
 ### Secreto para encriptar la cookie de sesión (JWT)
-Secreto para encriptar la cookie de sesión (JWT) --> AUTH_SECRET
 Generlo en una nueva en terminal de PowerShell
 ```bash
 openssl rand -base64 32
 ```
-Copiar codigo --> Variable .env **AUTH_SECRET**
+Copiar codigo --> Variable .env <u><strong>AUTH_SECRET</strong></u>
 
 ### Crear las tablas en la base de datos
 ```bash
