@@ -3,7 +3,7 @@
 
 import bcrypt from "bcryptjs";
 import { masterDb, connectTenant } from "../app/db";
-import { users } from "../schema";
+import { users } from "../schema-master";
 import { eq, sql } from "drizzle-orm";
 import { createSession } from "../app/lib/session";
 import { redirect } from "next/navigation";
@@ -62,7 +62,7 @@ export async function register(formData: FormData) {
       },
       body: JSON.stringify({
         name: dbName,
-        group: "default" // Usa el grupo que tengas por defecto en Turso
+        group: "inversiones" // Usa el grupo que tengas por defecto en Turso
       })
     });
 

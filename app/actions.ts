@@ -3,7 +3,8 @@
 
 import YahooFinance from 'yahoo-finance2';
 import { masterDb, connectTenant } from "./db";
-import { assets, transactions, users, type InsertTransaction } from "../schema";
+import { assets, transactions, type InsertTransaction } from "../schema-tenant";
+import { users } from "../schema-master";
 import { desc, eq } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { decrypt } from "./lib/session";
@@ -55,20 +56,29 @@ async function getDolarCCL() {
 
 export async function searchTickers(query: string) {
   if (query.length < 2) return [];
+  
+  let result;
+  
   try {
-    const result = await yf.search(query, { quotesCount: 6, newsCount: 0 });
-    const quotes = (result.quotes || []) as YahooSearchQuote[];
-    
-    return quotes
-      .filter(q => q.symbol)
-      .map(q => ({
-        label: `${q.symbol} - ${q.shortname || ''}`,
-        key: q.symbol,
-      }));
-  } catch (error) {
-    console.error("Error en búsqueda:", error);
-    return [];
+    result = await yf.search(query, { quotesCount: 6, newsCount: 0 });
+  } catch (error: any) {
+    // Si el error es de validación de esquema, usamos los datos devueltos de todos modos
+    if (error.name === 'FailedYahooValidationError' && error.result) {
+      result = error.result;
+    } else {
+      console.error("Error en búsqueda:", error);
+      return [];
+    }
   }
+
+  const quotes = (result.quotes || []) as YahooSearchQuote[];
+  
+  return quotes
+    .filter(q => q.symbol)
+    .map(q => ({
+      label: `${q.symbol} - ${q.shortname || ''}`,
+      key: q.symbol,
+    }));
 }
 
 export async function addTransaction(data: InsertTransaction) {

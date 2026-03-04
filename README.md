@@ -1,10 +1,10 @@
-# Next.js & HeroUI Template
+# Mis inversiones
 
-This is a template for creating applications using Next.js 14 (app directory) and HeroUI (v2).
+Aplicación web moderna construida con Next.js y HeroUI diseñada para la gestión de portafolios financieros. Su principal característica es la implementación de una arquitectura Multi-Tenant impulsada por Turso y Drizzle ORM, la cual aprovisiona de forma automática una base de datos privada y completamente aislada para cada usuario al momento de registrarse.
 
-[Try it on CodeSandbox](https://githubbox.com/heroui-inc/heroui/next-app-template)
+Además, la plataforma se integra en el backend con Yahoo Finance y APIs de cotización del Dólar CCL para valorizar los activos (acciones, CEDEARs, ETFs) en tiempo real, permitiendo a los usuarios registrar sus compras y ventas, y visualizar la evolución histórica de su dinero de forma segura y personalizada.
 
-## Technologies Used
+## Stack
 
 - [Next.js 14](https://nextjs.org/docs/getting-started)
 - [HeroUI v2](https://heroui.com/)
@@ -14,40 +14,89 @@ This is a template for creating applications using Next.js 14 (app directory) an
 - [Framer Motion](https://www.framer.com/motion/)
 - [next-themes](https://github.com/pacocoursey/next-themes)
 
-## How to Use
+## Configuración para usar
 
-### Use the template with create-next-app
-
-To create a new project based on this template using `create-next-app`, run the following command:
-
-```bash
-npx create-next-app -e https://github.com/heroui-inc/next-app-template
-```
-
-### Install dependencies
-
-You can use one of them `npm`, `yarn`, `pnpm`, `bun`, Example using `npm`:
+### Instalar dependencias
 
 ```bash
 npm install
 ```
 
-### Run the development server
+### Iniciar turso en PowerShell
+```bash
+wsl
+```
+```bash
+export PATH="/root/.turso:$PATH"
+```
+```bash
+echo 'export PATH="/root/.turso:$PATH"' >> ~/.bashrc
+```
+```bash
+turso # validación
+```
 
+### Iniciar sesion en turso
+```bash
+turso auth login --headless
+```
+Ir a la URL generada, copiar el Access Token y pegar en terminal directamente
+
+### Crear organización
+* No hace falta ya que por defecto, Turso crea una organización "personal" con el nombre de usuario de GitHub
+* Listar las organizaciones para ver el nombre:
+```bash
+turso org list
+```
+Copiar el SLUG --> Variable .env **TURSO_ORG_NAME**
+
+### Obtener API TOKEN
+```bash
+turso auth api-tokens mint api-inversiones
+```
+Copiar token --> Variable .env **TURSO_API_TOKEN**
+
+### Crear grupo
+Ir al dashboard de turso, crear grupo llamado "inversiones" con location en Virginia (es la mas cercana a Argentina)
+
+### Crear base de datos master
+```bash
+turso db create master-db
+```
+Activar protección contra borrado (Delete Protection)
+```bash
+turso db config delete-protection enable master-db
+```
+Obtener la URL
+```bash
+turso db show master-db --url
+```
+Copiar URL --> Variable .env **TURSO_DATABASE_URL**
+
+### Generar token de seguridad
+```bash
+turso db tokens create master-db
+```
+Copiar token --> Variable .env **TURSO_AUTH_TOKEN**
+
+### Secreto para encriptar la cookie de sesión (JWT)
+Secreto para encriptar la cookie de sesión (JWT) --> AUTH_SECRET
+Generlo en una nueva en terminal de PowerShell
+```bash
+openssl rand -base64 32
+```
+Copiar codigo --> Variable .env **AUTH_SECRET**
+
+### Crear las tablas en la base de datos
+```bash
+npx drizzle-kit push
+```
+
+### Correr el servidor de desarrollo
 ```bash
 npm run dev
 ```
 
-### Setup pnpm (optional)
+## Licencia
 
-If you are using `pnpm`, you need to add the following code to your `.npmrc` file:
-
-```bash
-public-hoist-pattern[]=*@heroui/*
-```
-
-After modifying the `.npmrc` file, you need to run `pnpm install` again to ensure that the dependencies are installed correctly.
-
-## License
-
-Licensed under the [MIT license](https://github.com/heroui-inc/next-app-template/blob/main/LICENSE).
+Licencia bajo el [MIT license](https://github.com/heroui-inc/next-app-template/blob/main/LICENSE).

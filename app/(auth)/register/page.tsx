@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Card, CardHeader, CardBody } from "@heroui/card";
+import { Spinner } from "@heroui/spinner"; // Importamos el Spinner de HeroUI
 import { LockIcon, UserIcon } from "lucide-react"; 
 import { register } from "@/app/auth-actions";
 import { title } from "@/components/primitives";
@@ -39,56 +40,68 @@ export default function RegisterPage() {
         </CardHeader>
         
         <CardBody>
-          <form action={handleSubmit} className="flex flex-col gap-4">
-            <Input
-              isRequired
-              name="username"
-              label="Usuario"
-              placeholder="Elige un nombre de usuario"
-              variant="bordered"
-              labelPlacement="outside"
-              startContent={
-                <UserIcon className="text-2xl text-default-400 pointer-events-none flex-shrink-0" />
-              }
-            />
-            
-            <Input
-              isRequired
-              name="password"
-              label="Contraseña"
-              placeholder="********"
-              type="password"
-              variant="bordered"
-              labelPlacement="outside"
-              startContent={
-                <LockIcon className="text-2xl text-default-400 pointer-events-none flex-shrink-0" />
-              }
-            />
+          {loading ? (
+            /* Vista de carga con el Spinner centrado */
+            <div className="flex flex-col items-center justify-center py-10 gap-6">
+              <Spinner size="lg" color="primary" label="Creando base de datos..." />
+              <p className="text-default-500 text-sm text-center px-4">
+                Por favor no cierres esta ventana, estamos configurando tu entorno seguro. Esto puede tardar unos segundos.
+              </p>
+            </div>
+          ) : (
+            /* Formulario normal cuando no está cargando */
+            <>
+              <form action={handleSubmit} className="flex flex-col gap-4">
+                <Input
+                  isRequired
+                  name="username"
+                  label="Usuario"
+                  placeholder="Elige un nombre de usuario"
+                  variant="bordered"
+                  labelPlacement="outside"
+                  startContent={
+                    <UserIcon className="text-2xl text-default-400 pointer-events-none flex-shrink-0" />
+                  }
+                />
+                
+                <Input
+                  isRequired
+                  name="password"
+                  label="Contraseña"
+                  placeholder="********"
+                  type="password"
+                  variant="bordered"
+                  labelPlacement="outside"
+                  startContent={
+                    <LockIcon className="text-2xl text-default-400 pointer-events-none flex-shrink-0" />
+                  }
+                />
 
-            {error && (
-              <div className="bg-danger-50 text-danger text-tiny p-3 rounded-medium border-1 border-danger-200">
-                {error}
-              </div>
-            )}
+                {error && (
+                  <div className="bg-danger-50 text-danger text-tiny p-3 rounded-medium border-1 border-danger-200">
+                    {error}
+                  </div>
+                )}
 
-            <Button 
-              type="submit" 
-              color="primary" 
-              className="mt-2 font-semibold"
-              isLoading={loading}
-              size="lg"
-            >
-              {loading ? "Creando base de datos..." : "Registrarse y crear BD"}
-            </Button>
-          </form>
+                <Button 
+                  type="submit" 
+                  color="primary" 
+                  className="mt-2 font-semibold"
+                  size="lg"
+                >
+                  Registrarse y crear BD
+                </Button>
+              </form>
 
-          {/* Enlace al login */}
-          <p className="text-center text-small text-default-500 mt-6">
-            ¿Ya tienes cuenta?{" "}
-            <Link href="/login" className="text-primary hover:underline font-medium">
-              Inicia sesión aquí
-            </Link>
-          </p>
+              {/* Enlace al login */}
+              <p className="text-center text-small text-default-500 mt-6">
+                ¿Ya tienes cuenta?{" "}
+                <Link href="/login" className="text-primary hover:underline font-medium">
+                  Inicia sesión aquí
+                </Link>
+              </p>
+            </>
+          )}
         </CardBody>
       </Card>
     </div>

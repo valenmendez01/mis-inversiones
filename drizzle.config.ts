@@ -5,7 +5,7 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' }); // o solo '.env' dependiendo de qué uses
 
 export default defineConfig({
-  schema: './schema.ts', // Ajustá esta ruta si tu schema está en otra carpeta
+  schema: './schema-master.ts',
   out: './drizzle', // Aquí se guardarán los historiales de migración
   dialect: 'turso',
   dbCredentials: {
