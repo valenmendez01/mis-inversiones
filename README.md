@@ -84,7 +84,7 @@ Generlo en una nueva en terminal de PowerShell
 ```bash
 openssl rand -base64 32
 ```
-Copiar codigo --> Variable .env <u><strong>AUTH_SECRET</strong></u>
+Copiar codigo --> Variable .env **AUTH_SECRET**
 
 ### Crear las tablas en la base de datos
 ```bash
