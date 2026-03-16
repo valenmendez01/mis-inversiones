@@ -5,7 +5,7 @@ import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Card, CardHeader, CardBody } from "@heroui/card";
 import { Spinner } from "@heroui/spinner";
-import { LockIcon, UserIcon } from "lucide-react"; 
+import { KeyIcon, LockIcon, UserIcon } from "lucide-react"; 
 import { register } from "@/app/auth-actions";
 import { title } from "@/components/primitives";
 import Link from "next/link";
@@ -43,6 +43,17 @@ export default function RegisterPage() {
               variant="bordered"
               labelPlacement="outside"
               startContent={<LockIcon className="text-2xl text-default-400 pointer-events-none" />}
+            />
+
+            <Input
+              isRequired
+              name="registrationSecret"
+              label="Código de Invitación"
+              placeholder="Introduce el código para registrarte"
+              type="password"
+              variant="bordered"
+              labelPlacement="outside"
+              startContent={<KeyIcon className="text-2xl text-default-400 pointer-events-none" />}
             />
 
             {/* Mostrar errores devueltos por la Server Action */}

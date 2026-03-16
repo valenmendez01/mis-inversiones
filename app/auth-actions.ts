@@ -37,6 +37,13 @@ export async function logout() {
 export async function register(prevState: any, formData: FormData) {
   const username = formData.get("username") as string;
   const password = formData.get("password") as string;
+  const registrationSecret = formData.get("registrationSecret") as string;
+
+  // 0. Validar el código de invitación global
+  const masterSecret = process.env.REGISTRATION_SECRET;
+  if (registrationSecret !== masterSecret) {
+    return { error: "Código de invitación incorrecto. No tienes permiso para registrarte." };
+  }
 
   // 1. Verificar si el usuario ya existe en la Master DB
   const existingUser = await masterDb.select().from(users).where(eq(users.username, username)).get();
