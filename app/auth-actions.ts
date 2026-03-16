@@ -10,24 +10,22 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { randomUUID } from "crypto";
 
-export async function login(formData: FormData) {
+export async function login(prevState: any, formData: FormData) {
   const username = formData.get("username") as string;
   const password = formData.get("password") as string;
 
-  // 1. Buscar el usuario en la tabla 'users' de Turso
   const user = await masterDb
     .select()
     .from(users)
     .where(eq(users.username, username))
     .get();
 
-  // 2. Comparar la contraseña ingresada con el hash de la base de datos
   if (!user || !(await bcrypt.compare(password, user.password))) {
     return { error: "Usuario o contraseña incorrectos" };
   }
 
-  // 3. Crear sesión y redirigir
   await createSession(user.id);
+  // redirect() lanzará el error de redirección que Next.js manejará automáticamente
   redirect("/");
 }
 
@@ -36,7 +34,7 @@ export async function logout() {
   redirect("/login");
 }
 
-export async function register(formData: FormData) {
+export async function register(prevState: any, formData: FormData) {
   const username = formData.get("username") as string;
   const password = formData.get("password") as string;
 

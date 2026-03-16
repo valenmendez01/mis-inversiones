@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Card, CardHeader, CardBody } from "@heroui/card";
@@ -10,23 +10,7 @@ import { title } from "@/components/primitives";
 import Link from "next/link"; // Agregado
 
 export default function LoginPage() {
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function handleSubmit(formData: FormData) {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await login(formData);
-      if (result?.error) {
-        setError(result.error);
-      }
-    } catch (err) {
-      setError("Ocurrió un error inesperado. Inténtalo de nuevo.");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [state, formAction, isPending] = useActionState(login, null);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[80vh] px-4">
@@ -37,7 +21,8 @@ export default function LoginPage() {
         </CardHeader>
         
         <CardBody>
-          <form action={handleSubmit} className="flex flex-col gap-4">
+          {/* Usamos formAction en lugar de un handleSubmit manual */}
+          <form action={formAction} className="flex flex-col gap-4">
             <Input
               isRequired
               name="username"
@@ -45,9 +30,7 @@ export default function LoginPage() {
               placeholder="Escribe tu usuario"
               variant="bordered"
               labelPlacement="outside"
-              startContent={
-                <UserIcon className="text-2xl text-default-400 pointer-events-none flex-shrink-0" />
-              }
+              startContent={<UserIcon className="text-2xl text-default-400 pointer-events-none" />}
             />
             
             <Input
@@ -58,14 +41,13 @@ export default function LoginPage() {
               type="password"
               variant="bordered"
               labelPlacement="outside"
-              startContent={
-                <LockIcon className="text-2xl text-default-400 pointer-events-none flex-shrink-0" />
-              }
+              startContent={<LockIcon className="text-2xl text-default-400 pointer-events-none" />}
             />
 
-            {error && (
+            {/* Mostramos el error si el estado lo contiene */}
+            {state?.error && (
               <div className="bg-danger-50 text-danger text-tiny p-3 rounded-medium border-1 border-danger-200">
-                {error}
+                {state.error}
               </div>
             )}
 
@@ -73,14 +55,14 @@ export default function LoginPage() {
               type="submit" 
               color="primary" 
               className="mt-2 font-semibold"
-              isLoading={loading}
               size="lg"
+              // isPending es true mientras la Server Action se ejecuta en el servidor
+              isLoading={isPending}
             >
-              {loading ? "Iniciando sesión..." : "Ingresar"}
+              {isPending ? "Iniciando..." : "Ingresar"}
             </Button>
           </form>
 
-          {/* Enlace al registro */}
           <p className="text-center text-small text-default-500 mt-6">
             ¿No tienes un portafolio?{" "}
             <Link href="/register" className="text-primary hover:underline font-medium">

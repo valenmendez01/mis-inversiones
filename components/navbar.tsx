@@ -27,7 +27,7 @@ export const Navbar = () => {
   const pathname = usePathname();
 
   // SI LA RUTA ES /LOGIN, NO RENDERIZAMOS NADA
-  if (pathname === "/login") return null;
+  if (pathname === "/login" || pathname === "/register") return null;
 
   return (
     <HeroUINavbar maxWidth="xl" position="sticky">
